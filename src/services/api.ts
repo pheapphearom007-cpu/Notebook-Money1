@@ -6,6 +6,25 @@ import { isSupabaseConfigured, getSupabaseClient } from './supabaseClient';
 const TOKEN_KEY = 'sievphov_auth_token_v1';
 const USER_KEY = 'sievphov_auth_user_v1';
 
+// Safely parse JSON from a response, handling empty bodies, 404/405, and HTML fallback
+async function safeParseJson(res: Response): Promise<{ ok: boolean; data: any; isJson: boolean }> {
+  try {
+    const text = await res.text();
+    if (!text || !text.trim()) {
+      return { ok: res.ok, data: {}, isJson: false };
+    }
+    const trimmed = text.trim();
+    // Static servers returning HTML (like index.html rewrite or 404 HTML error page)
+    if (trimmed.startsWith('<') || trimmed.startsWith('<!DOCTYPE') || trimmed.startsWith('<!doctype')) {
+      return { ok: false, data: {}, isJson: false };
+    }
+    const data = JSON.parse(trimmed);
+    return { ok: res.ok, data, isJson: true };
+  } catch {
+    return { ok: false, data: {}, isJson: false };
+  }
+}
+
 // Base API URL: default to current origin + /api
 const getApiBase = (): string => {
   if (typeof window !== 'undefined') {
@@ -93,23 +112,35 @@ export const ApiService = {
         body: JSON.stringify({ name, email, password }),
       });
 
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || 'Registration failed');
+      const parsed = await safeParseJson(res);
+
+      if (parsed.isJson && !parsed.ok && parsed.data?.error) {
+        throw new Error(parsed.data.error);
       }
 
-      const session: AuthSession = {
-        user: data.user,
-        token: data.token,
-      };
-      this.saveSession(session);
-      return session;
-    } catch (err: any) {
-      // If server unreachable (e.g. file:// mode), provide client-isolated secure registration
-      if (typeof window !== 'undefined' && (err.message.includes('fetch') || err.message.includes('Network'))) {
-        return this.clientFallbackRegister(name, email, password);
+      if (parsed.isJson && parsed.ok && parsed.data?.user) {
+        const session: AuthSession = {
+          user: parsed.data.user,
+          token: parsed.data.token,
+        };
+        this.saveSession(session);
+        return session;
       }
-      throw err;
+
+      // Static hosting / non-API fallback
+      return this.clientFallbackRegister(name, email, password);
+    } catch (err: any) {
+      if (err.message && (
+        err.message.includes('already exists') ||
+        err.message.includes('already in use') ||
+        err.message.includes('Password') ||
+        err.message.includes('password') ||
+        err.message.includes('Invalid') ||
+        err.message.includes('required')
+      )) {
+        throw err;
+      }
+      return this.clientFallbackRegister(name, email, password);
     }
   },
 
@@ -151,22 +182,31 @@ export const ApiService = {
         body: JSON.stringify({ email, password }),
       });
 
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || 'Invalid credentials');
+      const parsed = await safeParseJson(res);
+
+      if (parsed.isJson && !parsed.ok && parsed.data?.error) {
+        throw new Error(parsed.data.error);
       }
 
-      const session: AuthSession = {
-        user: data.user,
-        token: data.token,
-      };
-      this.saveSession(session);
-      return session;
-    } catch (err: any) {
-      if (typeof window !== 'undefined' && (err.message.includes('fetch') || err.message.includes('Network'))) {
-        return this.clientFallbackLogin(email, password);
+      if (parsed.isJson && parsed.ok && parsed.data?.user) {
+        const session: AuthSession = {
+          user: parsed.data.user,
+          token: parsed.data.token,
+        };
+        this.saveSession(session);
+        return session;
       }
-      throw err;
+
+      return this.clientFallbackLogin(email, password);
+    } catch (err: any) {
+      if (err.message && (
+        err.message.includes('credentials') ||
+        err.message.includes('Invalid') ||
+        err.message.includes('password')
+      )) {
+        throw err;
+      }
+      return this.clientFallbackLogin(email, password);
     }
   },
 
@@ -184,6 +224,12 @@ export const ApiService = {
       };
     }
 
+    // Isolated vault tokens & demo tokens don't query external /api
+    if (token.startsWith('vault_') || token.startsWith('demo_') || token.startsWith('supa_')) {
+      const saved = this.getSavedSession();
+      return saved?.user || null;
+    }
+
     try {
       const res = await fetch(`${getApiBase()}/auth/me`, {
         method: 'GET',
@@ -192,11 +238,16 @@ export const ApiService = {
         },
       });
 
-      if (!res.ok) return null;
-      const data = await res.json();
-      return data.user || null;
+      const parsed = await safeParseJson(res);
+      if (parsed.isJson && parsed.ok && parsed.data?.user) {
+        return parsed.data.user;
+      }
+
+      // If backend is not available or static hosting rewrite, fall back to saved session
+      const saved = this.getSavedSession();
+      return saved?.user || null;
     } catch {
-      // In offline/file mode, return saved session user
+      // In offline/static mode, return saved session user
       const saved = this.getSavedSession();
       return saved?.user || null;
     }
@@ -207,7 +258,7 @@ export const ApiService = {
     if (isSupabaseConfigured()) {
       const supabase = getSupabaseClient()!;
       await supabase.auth.signOut();
-    } else if (token) {
+    } else if (token && !token.startsWith('vault_') && !token.startsWith('demo_')) {
       try {
         await fetch(`${getApiBase()}/auth/logout`, {
           method: 'POST',
@@ -241,6 +292,10 @@ export const ApiService = {
       return mapped;
     }
 
+    if (token.startsWith('vault_') || token.startsWith('demo_')) {
+      return this.getCachedCustomers(userId);
+    }
+
     try {
       const res = await fetch(`${getApiBase()}/customers`, {
         method: 'GET',
@@ -249,13 +304,12 @@ export const ApiService = {
         },
       });
 
-      if (!res.ok) {
-        return this.getCachedCustomers(userId);
+      const parsed = await safeParseJson(res);
+      if (parsed.isJson && parsed.ok && Array.isArray(parsed.data)) {
+        this.cacheCustomers(userId, parsed.data);
+        return parsed.data;
       }
-
-      const customers = await res.json();
-      this.cacheCustomers(userId, customers);
-      return customers;
+      return this.getCachedCustomers(userId);
     } catch (err) {
       console.warn('Network issue fetching customers from cloud, using cached records:', err);
       return this.getCachedCustomers(userId);
@@ -303,23 +357,25 @@ export const ApiService = {
       return newCustomer;
     }
 
-    try {
-      const res = await fetch(`${getApiBase()}/customers`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(newCustomer),
-      });
+    if (!token.startsWith('vault_') && !token.startsWith('demo_')) {
+      try {
+        const res = await fetch(`${getApiBase()}/customers`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify(newCustomer),
+        });
 
-      if (res.ok) {
-        const saved = await res.json();
-        this.saveLocalCustomer(userId, saved);
-        return saved;
+        const parsed = await safeParseJson(res);
+        if (parsed.isJson && parsed.ok && parsed.data?.id) {
+          this.saveLocalCustomer(userId, parsed.data);
+          return parsed.data;
+        }
+      } catch (err) {
+        console.warn('Cloud save failed, cached locally:', err);
       }
-    } catch (err) {
-      console.warn('Cloud save failed, cached locally:', err);
     }
 
     this.saveLocalCustomer(userId, newCustomer);
@@ -340,7 +396,7 @@ export const ApiService = {
         })
         .eq('id', id)
         .eq('user_id', userId);
-    } else {
+    } else if (!token.startsWith('vault_') && !token.startsWith('demo_')) {
       try {
         await fetch(`${getApiBase()}/customers/${id}`, {
           method: 'PUT',
@@ -366,7 +422,7 @@ export const ApiService = {
     if (isSupabaseConfigured()) {
       const supabase = getSupabaseClient()!;
       await supabase.from('customers').delete().eq('id', id).eq('user_id', userId);
-    } else {
+    } else if (!token.startsWith('vault_') && !token.startsWith('demo_')) {
       try {
         await fetch(`${getApiBase()}/customers/${id}`, {
           method: 'DELETE',
@@ -401,6 +457,10 @@ export const ApiService = {
       return mapped;
     }
 
+    if (token.startsWith('vault_') || token.startsWith('demo_')) {
+      return this.getCachedNotes(userId);
+    }
+
     try {
       const res = await fetch(`${getApiBase()}/notes`, {
         method: 'GET',
@@ -409,13 +469,12 @@ export const ApiService = {
         },
       });
 
-      if (!res.ok) {
-        return this.getCachedNotes(userId);
+      const parsed = await safeParseJson(res);
+      if (parsed.isJson && parsed.ok && Array.isArray(parsed.data)) {
+        this.cacheNotes(userId, parsed.data);
+        return parsed.data;
       }
-
-      const notes = await res.json();
-      this.cacheNotes(userId, notes);
-      return notes;
+      return this.getCachedNotes(userId);
     } catch {
       return this.getCachedNotes(userId);
     }
@@ -451,23 +510,25 @@ export const ApiService = {
       return newNote;
     }
 
-    try {
-      const res = await fetch(`${getApiBase()}/notes`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(newNote),
-      });
+    if (!token.startsWith('vault_') && !token.startsWith('demo_')) {
+      try {
+        const res = await fetch(`${getApiBase()}/notes`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify(newNote),
+        });
 
-      if (res.ok) {
-        const saved = await res.json();
-        this.saveLocalNote(userId, saved);
-        return saved;
+        const parsed = await safeParseJson(res);
+        if (parsed.isJson && parsed.ok && parsed.data?.id) {
+          this.saveLocalNote(userId, parsed.data);
+          return parsed.data;
+        }
+      } catch (err) {
+        console.warn('Cloud note save failed, cached locally:', err);
       }
-    } catch (err) {
-      console.warn('Cloud note save failed, cached locally:', err);
     }
 
     this.saveLocalNote(userId, newNote);
@@ -492,7 +553,7 @@ export const ApiService = {
         })
         .eq('id', id)
         .eq('user_id', userId);
-    } else {
+    } else if (!token.startsWith('vault_') && !token.startsWith('demo_')) {
       try {
         await fetch(`${getApiBase()}/notes/${id}`, {
           method: 'PUT',
@@ -517,7 +578,7 @@ export const ApiService = {
     if (isSupabaseConfigured()) {
       const supabase = getSupabaseClient()!;
       await supabase.from('notes').delete().eq('id', id).eq('user_id', userId);
-    } else {
+    } else if (!token.startsWith('vault_') && !token.startsWith('demo_')) {
       try {
         await fetch(`${getApiBase()}/notes/${id}`, {
           method: 'DELETE',
@@ -588,7 +649,12 @@ export const ApiService = {
   // Client Fallback Helpers for offline / file:// protocol
   clientFallbackRegister(name: string, email: string, password: string): AuthSession {
     const usersStr = localStorage.getItem('sievphov_vault_users') || '[]';
-    const users: any[] = JSON.parse(usersStr);
+    let users: any[] = [];
+    try {
+      users = JSON.parse(usersStr);
+    } catch {
+      users = [];
+    }
     const normalizedEmail = email.trim().toLowerCase();
 
     if (users.some((u) => u.email.toLowerCase() === normalizedEmail)) {
@@ -620,7 +686,12 @@ export const ApiService = {
 
   clientFallbackLogin(email: string, password: string): AuthSession {
     const usersStr = localStorage.getItem('sievphov_vault_users') || '[]';
-    const users: any[] = JSON.parse(usersStr);
+    let users: any[] = [];
+    try {
+      users = JSON.parse(usersStr);
+    } catch {
+      users = [];
+    }
     const normalizedEmail = email.trim().toLowerCase();
 
     // Check pre-configured demo user
