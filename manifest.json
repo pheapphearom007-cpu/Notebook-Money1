@@ -1,0 +1,29 @@
+{
+  "name": "សៀវភៅបញ្ជី - Sievphov Banchy",
+  "short_name": "សៀវភៅបញ្ជី",
+  "description": "កម្មវិធីកត់ត្រា និងគ្រប់គ្រងព័ត៌មានអតិថិជន និងកំណត់ចំណាំអាជីវកម្ម",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f7f5f1",
+  "theme_color": "#1f3d5c",
+  "icons": [
+    {
+      "src": "/favicon-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/favicon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png"
+    }
+  ]
+}
