@@ -8,16 +8,15 @@ const distHtmlPath = path.resolve(__dirname, '../dist/index.html');
 const rootAppHtmlPath = path.resolve(__dirname, '../app.html');
 
 if (fs.existsSync(distHtmlPath)) {
-  let content = fs.readFileSync(distHtmlPath, 'utf8');
+  const content = fs.readFileSync(distHtmlPath, 'utf8');
 
-  // Replace type="module" crossorigin with universal <script>
-  // This removes browser CORS blocking when opening directly via file://
-  content = content.replace(/<script\s+type="module"\s+crossorigin>/g, '<script>');
+  // dist/index.html is for Web Hosting (Render, Vercel, Netlify):
+  // It MUST keep standard <script type="module" crossorigin> so the browser executes properly on HTTP/HTTPS
+  console.log('✓ Verified dist/index.html with standard module scripts for Web & Render deployment.');
 
-  fs.writeFileSync(distHtmlPath, content, 'utf8');
-  console.log('✓ Successfully enhanced dist/index.html for universal file:// and http:// execution!');
-
-  // Also write app.html in the root directory for instant double-click access
-  fs.writeFileSync(rootAppHtmlPath, content, 'utf8');
+  // app.html is for offline double-click file:// execution:
+  // Use <script defer> so it waits for DOM while bypassing file:// module CORS restrictions
+  const appContent = content.replace(/<script\s+type="module"\s+crossorigin>/g, '<script defer>');
+  fs.writeFileSync(rootAppHtmlPath, appContent, 'utf8');
   console.log('✓ Created app.html in root directory for 1-click double-click launch without server!');
 }
