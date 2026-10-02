@@ -83,10 +83,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </Button>
             <Button
               size="md"
-              variant="outline"
+              variant="secondary"
               onClick={onOpenAddNote}
-              leftIcon={<StickyNote className="w-4 h-4 text-primary-foreground" />}
-              className="border-primary-foreground/30 text-primary-foreground hover:bg-primary-foreground/10"
+              leftIcon={<StickyNote className="w-4 h-4 text-primary" />}
+              className="bg-primary-foreground text-primary hover:bg-white font-bold shadow-xs border-0"
             >
               {t.dashboard.addNewNote}
             </Button>

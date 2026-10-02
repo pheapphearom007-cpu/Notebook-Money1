@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
+import { ArrowLeft } from 'lucide-react';
 import { Customer } from './types/customer';
 import { Navbar } from './components/layout/Navbar';
 import { Sidebar, NavTab } from './components/layout/Sidebar';
@@ -32,8 +33,39 @@ export const AppContent: React.FC = () => {
   const { showToast } = useToast();
 
   const [currentTab, setCurrentTab] = useState<NavTab>('dashboard');
+  const [tabHistory, setTabHistory] = useState<NavTab[]>(['dashboard']);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
+
+  // Navigate to tab and maintain navigation history stack
+  const handleSelectTab = useCallback((newTab: NavTab) => {
+    setCurrentTab((prevTab) => {
+      if (prevTab !== newTab) {
+        setTabHistory((prev) => [...prev, newTab]);
+      }
+      return newTab;
+    });
+  }, []);
+
+  // Back button handler: pops previous tab or falls back to dashboard / browser back
+  const handleGoBack = useCallback(() => {
+    setTabHistory((prev) => {
+      if (prev.length > 1) {
+        const nextHistory = [...prev];
+        nextHistory.pop(); // remove current tab
+        const previousTab = nextHistory[nextHistory.length - 1];
+        setCurrentTab(previousTab);
+        return nextHistory;
+      }
+      // If at root of history
+      if (currentTab !== 'dashboard') {
+        setCurrentTab('dashboard');
+      } else if (typeof window !== 'undefined' && window.history.length > 1) {
+        window.history.back();
+      }
+      return prev;
+    });
+  }, [currentTab]);
 
   // Customer Modals
   const [isCustomerFormModalOpen, setIsCustomerFormModalOpen] = useState(false);
@@ -99,7 +131,7 @@ export const AppContent: React.FC = () => {
   };
 
   const handleNavigateToCustomers = () => {
-    setCurrentTab('customers');
+    handleSelectTab('customers');
   };
 
   // If unauthenticated, show AuthView with LoadingScreen on top while checking
@@ -129,7 +161,7 @@ export const AppContent: React.FC = () => {
         {/* Responsive Sidebar */}
         <Sidebar
           currentTab={currentTab}
-          onSelectTab={setCurrentTab}
+          onSelectTab={handleSelectTab}
           isOpenMobile={isMobileMenuOpen}
           onCloseMobile={() => setIsMobileMenuOpen(false)}
           onOpenProfile={() => setIsProfileModalOpen(true)}
@@ -137,11 +169,24 @@ export const AppContent: React.FC = () => {
 
         {/* Main Workspace Area */}
         <main className="flex-1 p-4 sm:p-6 lg:p-8 min-w-0">
+          {/* Top-Left Back Button on each page */}
+          <div className="mb-4 sm:mb-6">
+            <button
+              type="button"
+              onClick={handleGoBack}
+              className="inline-flex items-center gap-2 px-3.5 py-1.5 sm:px-4 sm:py-2 rounded-xl border border-border bg-card hover:bg-muted text-foreground font-khmer text-xs sm:text-sm font-semibold shadow-2xs hover:shadow-xs transition-all cursor-pointer group active:scale-95"
+              title={t.common.back}
+            >
+              <ArrowLeft className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors shrink-0" />
+              <span>{t.common.back}</span>
+            </button>
+          </div>
+
           {currentTab === 'dashboard' && (
             <DashboardView
-              onNavigate={setCurrentTab}
+              onNavigate={handleSelectTab}
               onOpenAddCustomer={handleOpenAddCustomer}
-              onOpenAddNote={() => setCurrentTab('notes')}
+              onOpenAddNote={() => handleSelectTab('notes')}
               onViewCustomer={handleOpenViewCustomer}
             />
           )}
@@ -171,9 +216,9 @@ export const AppContent: React.FC = () => {
                 <CustomerForm
                   onSubmit={(data) => {
                     handleCustomerSubmit(data);
-                    setCurrentTab('customers');
+                    handleSelectTab('customers');
                   }}
-                  onCancel={() => setCurrentTab('customers')}
+                  onCancel={() => handleSelectTab('customers')}
                   isSubmitting={isSubmitting}
                 />
               </div>
@@ -191,7 +236,7 @@ export const AppContent: React.FC = () => {
       {/* Mobile Bottom Navigation Bar */}
       <BottomNav
         currentTab={currentTab}
-        onSelectTab={setCurrentTab}
+        onSelectTab={handleSelectTab}
         onOpenAddCustomer={handleOpenAddCustomer}
       />
 

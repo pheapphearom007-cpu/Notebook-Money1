@@ -24,7 +24,7 @@ export const kmTranslations: Translations = {
     noData: 'មិនទាន់មានទិន្នន័យ',
     noResults: 'រកមិនឃើញទិន្នន័យដែលត្រូវគ្នាឡើយ',
     confirm: 'យល់ព្រម',
-    back: 'ត្រឡប់ក្រោយ',
+    back: 'ថយក្រោយ',
     close: 'បិទ',
     export: 'ទាញយកទិន្នន័យ (Export)',
     import: 'បញ្ចូលទិន្នន័យ (Import)',
