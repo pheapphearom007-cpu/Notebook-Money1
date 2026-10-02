@@ -153,29 +153,25 @@ function authenticateUser(req, db) {
   return (db.users || []).find((u) => u.id === session.userId) || null;
 }
 
-export function cloudApiPlugin() {
-  return {
-    name: 'cloud-api-plugin',
-    configureServer(server) {
-      initDb();
+export async function handleCloudApi(req, res) {
+  initDb();
 
-      server.middlewares.use(async (req, res, next) => {
-        // Handle preflight CORS
-        if (req.method === 'OPTIONS') {
-          res.statusCode = 204;
-          res.setHeader('Access-Control-Allow-Origin', '*');
-          res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-          res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-          return res.end();
-        }
+  // Handle preflight CORS
+  if (req.method === 'OPTIONS') {
+    res.statusCode = 204;
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    return res.end();
+  }
 
-        const url = req.url || '';
-        if (!url.startsWith('/api/')) {
-          return next();
-        }
+  const url = req.url || '';
+  if (!url.startsWith('/api/')) {
+    return false;
+  }
 
-        const pathname = url.split('?')[0];
-        const db = readDb();
+  const pathname = url.split('?')[0];
+  const db = readDb();
 
         // Health check endpoint
         if (pathname === '/api/health' && req.method === 'GET') {
@@ -431,6 +427,19 @@ export function cloudApiPlugin() {
         }
 
         return sendJson(res, 404, { error: 'Endpoint not found' });
+}
+
+export function cloudApiPlugin() {
+  return {
+    name: 'cloud-api-plugin',
+    configureServer(server) {
+      initDb();
+      server.middlewares.use(async (req, res, next) => {
+        const url = req.url || '';
+        if (req.method !== 'OPTIONS' && !url.startsWith('/api/')) {
+          return next();
+        }
+        await handleCloudApi(req, res);
       });
     },
   };
