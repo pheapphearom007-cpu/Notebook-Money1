@@ -169,18 +169,20 @@ export const AppContent: React.FC = () => {
 
         {/* Main Workspace Area */}
         <main className="flex-1 p-4 sm:p-6 lg:p-8 min-w-0">
-          {/* Top-Left Back Button on each page */}
-          <div className="mb-4 sm:mb-6">
-            <button
-              type="button"
-              onClick={handleGoBack}
-              className="inline-flex items-center gap-2 px-3.5 py-1.5 sm:px-4 sm:py-2 rounded-xl border border-border bg-card hover:bg-muted text-foreground font-khmer text-xs sm:text-sm font-semibold shadow-2xs hover:shadow-xs transition-all cursor-pointer group active:scale-95"
-              title={t.common.back}
-            >
-              <ArrowLeft className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors shrink-0" />
-              <span>{t.common.back}</span>
-            </button>
-          </div>
+          {/* Top-Left Back Button (shown on all pages except the home page) */}
+          {currentTab !== 'dashboard' && (
+            <div className="mb-4 sm:mb-6">
+              <button
+                type="button"
+                onClick={handleGoBack}
+                className="inline-flex items-center gap-2 px-3.5 py-1.5 sm:px-4 sm:py-2 rounded-xl border border-border bg-card hover:bg-muted text-foreground font-khmer text-xs sm:text-sm font-semibold shadow-2xs hover:shadow-xs transition-all cursor-pointer group active:scale-95"
+                title={t.common.back}
+              >
+                <ArrowLeft className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors shrink-0" />
+                <span>{t.common.back}</span>
+              </button>
+            </div>
+          )}
 
           {currentTab === 'dashboard' && (
             <DashboardView
