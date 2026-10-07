@@ -319,13 +319,17 @@ export const ApiService = {
   // 6. CREATE CUSTOMER
   async createCustomer(token: string, userId: string, customerData: Omit<Customer, 'id' | 'createdAt' | 'updatedAt'>): Promise<Customer> {
     const now = new Date().toISOString();
+    const customerId = (customerData as any).id || `cust-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
     const newCustomer: Customer = {
       ...customerData,
-      id: `cust-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      id: customerId,
       userId,
-      createdAt: now,
+      createdAt: (customerData as any).createdAt || now,
       updatedAt: now,
     };
+
+    // Cache locally immediately to ensure no data loss even during sudden reloads
+    this.saveLocalCustomer(userId, newCustomer);
 
     if (isSupabaseConfigured()) {
       const supabase = getSupabaseClient()!;
@@ -353,7 +357,6 @@ export const ApiService = {
       if (error) {
         console.error('Supabase createCustomer error:', error);
       }
-      this.saveLocalCustomer(userId, newCustomer);
       return newCustomer;
     }
 
@@ -378,7 +381,6 @@ export const ApiService = {
       }
     }
 
-    this.saveLocalCustomer(userId, newCustomer);
     return newCustomer;
   },
 
@@ -386,6 +388,18 @@ export const ApiService = {
   async updateCustomer(token: string, userId: string, id: string, data: Partial<Customer>): Promise<void> {
     const now = new Date().toISOString();
 
+    // 1. Immediately update client cache so reload never reverts to old data!
+    const current = this.getCachedCustomers(userId);
+    const existingIdx = current.findIndex((c) => c.id === id);
+    let updated: Customer[];
+    if (existingIdx !== -1) {
+      updated = current.map((c) => (c.id === id ? { ...c, ...data, updatedAt: now } : c));
+    } else {
+      updated = [{ ...data, id, userId, createdAt: now, updatedAt: now } as Customer, ...current];
+    }
+    this.cacheCustomers(userId, updated);
+
+    // 2. Sync update to cloud database
     if (isSupabaseConfigured()) {
       const supabase = getSupabaseClient()!;
       await supabase
@@ -410,15 +424,15 @@ export const ApiService = {
         console.warn('Cloud update failed, updating cached records:', err);
       }
     }
-
-    // Update client cache
-    const current = this.getCachedCustomers(userId);
-    const updated = current.map((c) => (c.id === id ? { ...c, ...data, updatedAt: now } : c));
-    this.cacheCustomers(userId, updated);
   },
 
   // 8. DELETE CUSTOMER
   async deleteCustomer(token: string, userId: string, id: string): Promise<void> {
+    // 1. Immediately remove from client cache
+    const current = this.getCachedCustomers(userId);
+    this.cacheCustomers(userId, current.filter((c) => c.id !== id));
+
+    // 2. Sync deletion to cloud database
     if (isSupabaseConfigured()) {
       const supabase = getSupabaseClient()!;
       await supabase.from('customers').delete().eq('id', id).eq('user_id', userId);
@@ -434,9 +448,6 @@ export const ApiService = {
         console.warn('Cloud delete failed, removing from local cache:', err);
       }
     }
-
-    const current = this.getCachedCustomers(userId);
-    this.cacheCustomers(userId, current.filter((c) => c.id !== id));
   },
 
   // 9. FETCH USER'S NOTES
@@ -483,13 +494,17 @@ export const ApiService = {
   // 10. CREATE NOTE
   async createNote(token: string, userId: string, noteData: Omit<GeneralNote, 'id' | 'createdAt' | 'updatedAt'>): Promise<GeneralNote> {
     const now = new Date().toISOString();
+    const noteId = (noteData as any).id || `note-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
     const newNote: GeneralNote = {
       ...noteData,
-      id: `note-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      id: noteId,
       userId,
-      createdAt: now,
+      createdAt: (noteData as any).createdAt || now,
       updatedAt: now,
     };
+
+    // Cache locally immediately to ensure persistence across reloads
+    this.saveLocalNote(userId, newNote);
 
     if (isSupabaseConfigured()) {
       const supabase = getSupabaseClient()!;
@@ -506,7 +521,6 @@ export const ApiService = {
         created_at: newNote.createdAt,
         updated_at: newNote.updatedAt,
       });
-      this.saveLocalNote(userId, newNote);
       return newNote;
     }
 
@@ -531,7 +545,6 @@ export const ApiService = {
       }
     }
 
-    this.saveLocalNote(userId, newNote);
     return newNote;
   },
 
@@ -539,6 +552,18 @@ export const ApiService = {
   async updateNote(token: string, userId: string, id: string, data: Partial<GeneralNote>): Promise<void> {
     const now = new Date().toISOString();
 
+    // 1. Immediately update client cache
+    const current = this.getCachedNotes(userId);
+    const existingIdx = current.findIndex((n) => n.id === id);
+    let updated: GeneralNote[];
+    if (existingIdx !== -1) {
+      updated = current.map((n) => (n.id === id ? { ...n, ...data, updatedAt: now } : n));
+    } else {
+      updated = [{ ...data, id, userId, createdAt: now, updatedAt: now } as GeneralNote, ...current];
+    }
+    this.cacheNotes(userId, updated);
+
+    // 2. Sync to cloud database
     if (isSupabaseConfigured()) {
       const supabase = getSupabaseClient()!;
       await supabase
@@ -567,14 +592,15 @@ export const ApiService = {
         console.warn('Cloud update note failed, updating cached records:', err);
       }
     }
-
-    const current = this.getCachedNotes(userId);
-    const updated = current.map((n) => (n.id === id ? { ...n, ...data, updatedAt: now } : n));
-    this.cacheNotes(userId, updated);
   },
 
   // 12. DELETE NOTE
   async deleteNote(token: string, userId: string, id: string): Promise<void> {
+    // 1. Immediately remove from client cache
+    const current = this.getCachedNotes(userId);
+    this.cacheNotes(userId, current.filter((n) => n.id !== id));
+
+    // 2. Sync deletion to cloud database
     if (isSupabaseConfigured()) {
       const supabase = getSupabaseClient()!;
       await supabase.from('notes').delete().eq('id', id).eq('user_id', userId);
@@ -590,9 +616,6 @@ export const ApiService = {
         console.warn('Cloud delete note failed:', err);
       }
     }
-
-    const current = this.getCachedNotes(userId);
-    this.cacheNotes(userId, current.filter((n) => n.id !== id));
   },
 
   // Cache & Local Vault Helpers (User-isolated)

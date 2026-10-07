@@ -1,15 +1,12 @@
 services:
-  # Deploy as a Free Static Site on Render
+  # Deploy as a Full Web Service on Render with Node.js Central API & Multi-Device Sync
   - type: web
     name: sievphov-banchy
-    runtime: static
+    env: node
+    plan: free
     buildCommand: npm run build
-    staticPublishPath: ./dist
-    headers:
-      - path: /*
-        name: Cache-Control
-        value: no-cache
-    routes:
-      - type: rewrite
-        source: /*
-        destination: /index.html
+    startCommand: node server.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+

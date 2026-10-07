@@ -296,15 +296,30 @@ export async function handleCloudApi(req, res) {
         if (pathname === '/api/customers' && req.method === 'POST') {
           const body = await parseJsonBody(req);
           const now = new Date().toISOString();
+          const customerId = body.id || `cust-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+          db.customers = db.customers || [];
+
+          const existingIndex = db.customers.findIndex((c) => c.id === customerId && c.userId === user.id);
+          if (existingIndex !== -1) {
+            db.customers[existingIndex] = {
+              ...db.customers[existingIndex],
+              ...body,
+              id: customerId,
+              userId: user.id,
+              updatedAt: now,
+            };
+            writeDb(db);
+            return sendJson(res, 200, db.customers[existingIndex]);
+          }
+
           const newCustomer = {
             ...body,
-            id: body.id || `cust-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+            id: customerId,
             userId: user.id, // Strictly bound to authenticated user
             createdAt: body.createdAt || now,
             updatedAt: now,
           };
 
-          db.customers = db.customers || [];
           db.customers.unshift(newCustomer);
           writeDb(db);
 
@@ -321,12 +336,23 @@ export async function handleCloudApi(req, res) {
           db.customers = db.customers || [];
           const index = db.customers.findIndex((c) => c.id === customerId && c.userId === user.id);
           if (index === -1) {
-            return sendJson(res, 404, { error: 'Customer not found or unauthorized.' });
+            // Upsert if record was created locally or seeded
+            const upserted = {
+              ...body,
+              id: customerId,
+              userId: user.id,
+              createdAt: body.createdAt || now,
+              updatedAt: now,
+            };
+            db.customers.unshift(upserted);
+            writeDb(db);
+            return sendJson(res, 200, upserted);
           }
 
           db.customers[index] = {
             ...db.customers[index],
             ...body,
+            id: customerId,
             userId: user.id, // Prevent altering ownership
             updatedAt: now,
           };
@@ -360,15 +386,30 @@ export async function handleCloudApi(req, res) {
         if (pathname === '/api/notes' && req.method === 'POST') {
           const body = await parseJsonBody(req);
           const now = new Date().toISOString();
+          const noteId = body.id || `note-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+          db.notes = db.notes || [];
+
+          const existingIndex = db.notes.findIndex((n) => n.id === noteId && n.userId === user.id);
+          if (existingIndex !== -1) {
+            db.notes[existingIndex] = {
+              ...db.notes[existingIndex],
+              ...body,
+              id: noteId,
+              userId: user.id,
+              updatedAt: now,
+            };
+            writeDb(db);
+            return sendJson(res, 200, db.notes[existingIndex]);
+          }
+
           const newNote = {
             ...body,
-            id: body.id || `note-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+            id: noteId,
             userId: user.id,
             createdAt: body.createdAt || now,
             updatedAt: now,
           };
 
-          db.notes = db.notes || [];
           db.notes.unshift(newNote);
           writeDb(db);
 
@@ -385,12 +426,22 @@ export async function handleCloudApi(req, res) {
           db.notes = db.notes || [];
           const index = db.notes.findIndex((n) => n.id === noteId && n.userId === user.id);
           if (index === -1) {
-            return sendJson(res, 404, { error: 'Note not found or unauthorized.' });
+            const upserted = {
+              ...body,
+              id: noteId,
+              userId: user.id,
+              createdAt: body.createdAt || now,
+              updatedAt: now,
+            };
+            db.notes.unshift(upserted);
+            writeDb(db);
+            return sendJson(res, 200, upserted);
           }
 
           db.notes[index] = {
             ...db.notes[index],
             ...body,
+            id: noteId,
             userId: user.id,
             updatedAt: now,
           };

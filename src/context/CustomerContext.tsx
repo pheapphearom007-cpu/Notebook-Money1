@@ -67,6 +67,38 @@ const defaultFilterOptions: CustomerFilterOptions = {
   sortOrder: 'desc',
 };
 
+// Intelligently merges cloud and local records using last-write-wins (updatedAt) conflict resolution
+function mergeRecords<T extends { id: string; updatedAt?: string; createdAt?: string }>(
+  cloudList: T[],
+  localList: T[]
+): T[] {
+  const map = new Map<string, T>();
+
+  // 1. Insert local cached items
+  for (const item of localList) {
+    if (item && item.id) {
+      map.set(item.id, item);
+    }
+  }
+
+  // 2. Merge cloud items: if newer than local, cloud wins; if cloud is brand new, cloud added
+  for (const cloudItem of cloudList) {
+    if (!cloudItem || !cloudItem.id) continue;
+    const localItem = map.get(cloudItem.id);
+    if (!localItem) {
+      map.set(cloudItem.id, cloudItem);
+    } else {
+      const cloudTime = new Date(cloudItem.updatedAt || cloudItem.createdAt || 0).getTime();
+      const localTime = new Date(localItem.updatedAt || localItem.createdAt || 0).getTime();
+      if (cloudTime > localTime) {
+        map.set(cloudItem.id, cloudItem);
+      }
+    }
+  }
+
+  return Array.from(map.values());
+}
+
 const CustomerContext = createContext<CustomerContextType | undefined>(undefined);
 
 export const CustomerProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -127,16 +159,21 @@ export const CustomerProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
       // If cloud returned empty
       if (cloudCustomers.length === 0 && cloudNotes.length === 0) {
-        // Check if user has local cached data
+        // If user already has local cached data, keep it! Never overwrite with empty
         if (cachedCust.length > 0 || cachedNotes.length > 0) {
-          // Keep existing local cached records safe
           setCustomers(cachedCust);
           setNotes(cachedNotes);
           setIsDataLoading(false);
+
+          // Push local records to cloud in background
+          if (token) {
+            cachedCust.forEach((c) => ApiService.createCustomer(token, user.id, c));
+            cachedNotes.forEach((n) => ApiService.createNote(token, user.id, n));
+          }
           return;
         }
 
-        // Brand new account with no cloud or local records: provide initial seed
+        // Brand new account with zero cloud or local records: provide initial seed
         const seedCustomers = INITIAL_CUSTOMERS.slice(0, 3).map((c) => ({
           ...c,
           id: `cust-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
@@ -162,8 +199,34 @@ export const CustomerProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         return;
       }
 
-      setCustomers(cloudCustomers);
-      setNotes(cloudNotes);
+      // Merge cloud and local records using last-write-wins timestamp resolution
+      const mergedCustomers = mergeRecords(cloudCustomers, cachedCust);
+      const mergedNotes = mergeRecords(cloudNotes, cachedNotes);
+
+      setCustomers(mergedCustomers);
+      setNotes(mergedNotes);
+      ApiService.cacheCustomers(user.id, mergedCustomers);
+      ApiService.cacheNotes(user.id, mergedNotes);
+
+      // If any local record was updated more recently than cloud, sync it to cloud in background
+      if (token) {
+        for (const cust of mergedCustomers) {
+          const cloudCust = cloudCustomers.find((c) => c.id === cust.id);
+          const localTime = new Date(cust.updatedAt || cust.createdAt || 0).getTime();
+          const cloudTime = cloudCust ? new Date(cloudCust.updatedAt || cloudCust.createdAt || 0).getTime() : 0;
+          if (localTime > cloudTime) {
+            ApiService.updateCustomer(token, user.id, cust.id, cust).catch(() => {});
+          }
+        }
+        for (const note of mergedNotes) {
+          const cloudNote = cloudNotes.find((n) => n.id === note.id);
+          const localTime = new Date(note.updatedAt || note.createdAt || 0).getTime();
+          const cloudTime = cloudNote ? new Date(cloudNote.updatedAt || cloudNote.createdAt || 0).getTime() : 0;
+          if (localTime > cloudTime) {
+            ApiService.updateNote(token, user.id, note.id, note).catch(() => {});
+          }
+        }
+      }
     } catch (err) {
       console.warn('Network issue loading cloud records, using local vault:', err);
       const fallbackCust = ApiService.getCachedCustomers(user.id);
