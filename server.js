@@ -32,12 +32,22 @@ const server = http.createServer(async (req, res) => {
   let sanitizedPath = url.split('?')[0];
   let filePath = path.join(DIST_DIR, sanitizedPath);
 
-  // If path is root or directory or doesn't exist, fallback to index.html (SPA routing)
-  if (!fs.existsSync(filePath) || fs.statSync(filePath).isDirectory()) {
+  // If path is root or directory
+  if (sanitizedPath === '/' || sanitizedPath === '') {
+    filePath = path.join(DIST_DIR, 'index.html');
+  } else if (!fs.existsSync(filePath) || fs.statSync(filePath).isDirectory()) {
+    // If request has a file extension (e.g. .png, .ico, .js, .css, .json), do not return index.html
+    const ext = path.extname(sanitizedPath).toLowerCase();
+    if (ext && ext !== '.html') {
+      res.statusCode = 404;
+      res.setHeader('Content-Type', 'text/plain');
+      return res.end('File Not Found');
+    }
+    // Otherwise fallback to index.html for SPA client-side routing
     filePath = path.join(DIST_DIR, 'index.html');
   }
 
-  if (fs.existsSync(filePath)) {
+  if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
     const ext = path.extname(filePath).toLowerCase();
     res.statusCode = 200;
     res.setHeader('Content-Type', MIME_TYPES[ext] || 'application/octet-stream');

@@ -7,6 +7,22 @@ const __dirname = path.dirname(__filename);
 const distHtmlPath = path.resolve(__dirname, '../dist/index.html');
 const rootAppHtmlPath = path.resolve(__dirname, '../app.html');
 
+const publicDir = path.resolve(__dirname, '../public');
+const distDir = path.resolve(__dirname, '../dist');
+
+// Copy all static public assets into dist directory
+if (fs.existsSync(publicDir) && fs.existsSync(distDir)) {
+  const publicFiles = fs.readdirSync(publicDir);
+  for (const file of publicFiles) {
+    const src = path.join(publicDir, file);
+    const dest = path.join(distDir, file);
+    if (fs.statSync(src).isFile()) {
+      fs.copyFileSync(src, dest);
+    }
+  }
+  console.log(`✓ Copied ${publicFiles.length} static public assets to dist/ directory.`);
+}
+
 if (fs.existsSync(distHtmlPath)) {
   const content = fs.readFileSync(distHtmlPath, 'utf8');
 
