@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { ArrowLeft } from 'lucide-react';
 import { Customer } from './types/customer';
 import { Navbar } from './components/layout/Navbar';
@@ -20,6 +20,23 @@ import { useCustomers } from './context/CustomerContext';
 import { useAuth } from './context/AuthContext';
 import { useToast } from './context/ToastContext';
 
+const VALID_TABS: NavTab[] = ['dashboard', 'customers', 'add-customer', 'notes', 'settings'];
+const TAB_STORAGE_KEY = 'sievphov_active_tab';
+
+const getInitialTab = (): NavTab => {
+  if (typeof window !== 'undefined') {
+    const hash = window.location.hash.replace('#', '').toLowerCase() as NavTab;
+    if (VALID_TABS.includes(hash)) {
+      return hash;
+    }
+    const saved = localStorage.getItem(TAB_STORAGE_KEY) as NavTab | null;
+    if (saved && VALID_TABS.includes(saved)) {
+      return saved;
+    }
+  }
+  return 'dashboard';
+};
+
 export const AppContent: React.FC = () => {
   const { t } = useLanguage();
   const { isAuthenticated, isLoading: isAuthLoading } = useAuth();
@@ -32,12 +49,44 @@ export const AppContent: React.FC = () => {
   } = useCustomers();
   const { showToast } = useToast();
 
-  const [currentTab, setCurrentTab] = useState<NavTab>('dashboard');
-  const [tabHistory, setTabHistory] = useState<NavTab[]>(['dashboard']);
+  const [currentTab, setCurrentTab] = useState<NavTab>(getInitialTab);
+  const [tabHistory, setTabHistory] = useState<NavTab[]>(() => [getInitialTab()]);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
 
-  // Navigate to tab and maintain navigation history stack
+  // Synchronize URL hash and browser back/forward navigation with current tab
+  useEffect(() => {
+    const syncFromLocation = () => {
+      const hash = window.location.hash.replace('#', '').toLowerCase() as NavTab;
+      if (VALID_TABS.includes(hash)) {
+        setCurrentTab(hash);
+        localStorage.setItem(TAB_STORAGE_KEY, hash);
+      } else if (!window.location.hash || window.location.hash === '#') {
+        const saved = (localStorage.getItem(TAB_STORAGE_KEY) as NavTab) || 'dashboard';
+        if (VALID_TABS.includes(saved)) {
+          setCurrentTab(saved);
+        }
+      }
+    };
+
+    if (typeof window !== 'undefined') {
+      const initial = getInitialTab();
+      if (!window.location.hash || window.location.hash === '#') {
+        window.history.replaceState(null, '', `#${initial}`);
+      }
+      window.addEventListener('hashchange', syncFromLocation);
+      window.addEventListener('popstate', syncFromLocation);
+    }
+
+    return () => {
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('hashchange', syncFromLocation);
+        window.removeEventListener('popstate', syncFromLocation);
+      }
+    };
+  }, []);
+
+  // Navigate to tab and maintain navigation history stack & URL hash
   const handleSelectTab = useCallback((newTab: NavTab) => {
     setCurrentTab((prevTab) => {
       if (prevTab !== newTab) {
@@ -45,6 +94,13 @@ export const AppContent: React.FC = () => {
       }
       return newTab;
     });
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(TAB_STORAGE_KEY, newTab);
+      const targetHash = `#${newTab}`;
+      if (window.location.hash !== targetHash) {
+        window.location.hash = targetHash;
+      }
+    }
   }, []);
 
   // Back button handler: pops previous tab or falls back to dashboard / browser back
@@ -55,11 +111,19 @@ export const AppContent: React.FC = () => {
         nextHistory.pop(); // remove current tab
         const previousTab = nextHistory[nextHistory.length - 1];
         setCurrentTab(previousTab);
+        if (typeof window !== 'undefined') {
+          localStorage.setItem(TAB_STORAGE_KEY, previousTab);
+          window.location.hash = `#${previousTab}`;
+        }
         return nextHistory;
       }
       // If at root of history
       if (currentTab !== 'dashboard') {
         setCurrentTab('dashboard');
+        if (typeof window !== 'undefined') {
+          localStorage.setItem(TAB_STORAGE_KEY, 'dashboard');
+          window.location.hash = '#dashboard';
+        }
       } else if (typeof window !== 'undefined' && window.history.length > 1) {
         window.history.back();
       }

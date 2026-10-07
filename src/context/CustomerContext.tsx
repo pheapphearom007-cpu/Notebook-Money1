@@ -72,9 +72,35 @@ const CustomerContext = createContext<CustomerContextType | undefined>(undefined
 export const CustomerProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user, token } = useAuth();
 
-  const [customers, setCustomers] = useState<Customer[]>([]);
-  const [notes, setNotes] = useState<GeneralNote[]>([]);
-  const [isDataLoading, setIsDataLoading] = useState<boolean>(true);
+  // Initialize records synchronously from local vault cache to prevent layout jumps or empty flashes on reload
+  const [customers, setCustomers] = useState<Customer[]>(() => {
+    const saved = ApiService.getSavedSession()?.user;
+    const targetUserId = user?.id || saved?.id;
+    if (targetUserId) {
+      return ApiService.getCachedCustomers(targetUserId);
+    }
+    return [];
+  });
+
+  const [notes, setNotes] = useState<GeneralNote[]>(() => {
+    const saved = ApiService.getSavedSession()?.user;
+    const targetUserId = user?.id || saved?.id;
+    if (targetUserId) {
+      return ApiService.getCachedNotes(targetUserId);
+    }
+    return [];
+  });
+
+  const [isDataLoading, setIsDataLoading] = useState<boolean>(() => {
+    const saved = ApiService.getSavedSession()?.user;
+    const targetUserId = user?.id || saved?.id;
+    if (targetUserId) {
+      const cached = ApiService.getCachedCustomers(targetUserId);
+      return cached.length === 0;
+    }
+    return false;
+  });
+
   const [filterOptions, setFilterOptions] = useState<CustomerFilterOptions>(defaultFilterOptions);
 
   const refreshData = useCallback(async () => {
@@ -85,51 +111,65 @@ export const CustomerProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       return;
     }
 
-    setIsDataLoading(true);
+    const cachedCust = ApiService.getCachedCustomers(user.id);
+    const cachedNotes = ApiService.getCachedNotes(user.id);
+
+    // Only display blocking loading screen if user has zero local cached records
+    if (cachedCust.length === 0 && cachedNotes.length === 0) {
+      setIsDataLoading(true);
+    }
+
     try {
       const [cloudCustomers, cloudNotes] = await Promise.all([
         ApiService.getCustomers(token || '', user.id),
         ApiService.getNotes(token || '', user.id),
       ]);
 
-      // If brand new account with no records yet, provide initial seed for user
+      // If cloud returned empty
       if (cloudCustomers.length === 0 && cloudNotes.length === 0) {
-        const cachedCust = ApiService.getCachedCustomers(user.id);
-        if (cachedCust.length === 0) {
-          const seedCustomers = INITIAL_CUSTOMERS.slice(0, 3).map((c) => ({
-            ...c,
-            id: `cust-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-            userId: user.id,
-          }));
-          const seedNotes = INITIAL_NOTES.slice(0, 1).map((n) => ({
-            ...n,
-            id: `note-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-            userId: user.id,
-          }));
-
-          setCustomers(seedCustomers);
-          setNotes(seedNotes);
-          ApiService.cacheCustomers(user.id, seedCustomers);
-          ApiService.cacheNotes(user.id, seedNotes);
-
-          // Persist seed to server in background
-          if (token) {
-            seedCustomers.forEach((c) => ApiService.createCustomer(token, user.id, c));
-            seedNotes.forEach((n) => ApiService.createNote(token, user.id, n));
-          }
+        // Check if user has local cached data
+        if (cachedCust.length > 0 || cachedNotes.length > 0) {
+          // Keep existing local cached records safe
+          setCustomers(cachedCust);
+          setNotes(cachedNotes);
           setIsDataLoading(false);
           return;
         }
+
+        // Brand new account with no cloud or local records: provide initial seed
+        const seedCustomers = INITIAL_CUSTOMERS.slice(0, 3).map((c) => ({
+          ...c,
+          id: `cust-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+          userId: user.id,
+        }));
+        const seedNotes = INITIAL_NOTES.slice(0, 1).map((n) => ({
+          ...n,
+          id: `note-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+          userId: user.id,
+        }));
+
+        setCustomers(seedCustomers);
+        setNotes(seedNotes);
+        ApiService.cacheCustomers(user.id, seedCustomers);
+        ApiService.cacheNotes(user.id, seedNotes);
+
+        // Persist seed to server in background
+        if (token) {
+          seedCustomers.forEach((c) => ApiService.createCustomer(token, user.id, c));
+          seedNotes.forEach((n) => ApiService.createNote(token, user.id, n));
+        }
+        setIsDataLoading(false);
+        return;
       }
 
       setCustomers(cloudCustomers);
       setNotes(cloudNotes);
     } catch (err) {
       console.warn('Network issue loading cloud records, using local vault:', err);
-      const cachedCust = ApiService.getCachedCustomers(user.id);
-      const cachedNotes = ApiService.getCachedNotes(user.id);
-      setCustomers(cachedCust);
-      setNotes(cachedNotes);
+      const fallbackCust = ApiService.getCachedCustomers(user.id);
+      const fallbackNotes = ApiService.getCachedNotes(user.id);
+      setCustomers(fallbackCust);
+      setNotes(fallbackNotes);
     } finally {
       setIsDataLoading(false);
     }
@@ -191,6 +231,7 @@ export const CustomerProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       setCustomers(updated);
 
       if (user && token) {
+        ApiService.cacheCustomers(user.id, updated);
         ApiService.createCustomer(token, user.id, newCustomer).catch((err) => {
           console.warn('Async cloud customer save notice:', err);
         });
@@ -212,6 +253,7 @@ export const CustomerProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       setCustomers(updated);
 
       if (user && token) {
+        ApiService.cacheCustomers(user.id, updated);
         ApiService.updateCustomer(token, user.id, id, data).catch((err) => {
           console.warn('Async cloud customer update notice:', err);
         });
@@ -228,6 +270,7 @@ export const CustomerProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       setCustomers(updated);
 
       if (user && token) {
+        ApiService.cacheCustomers(user.id, updated);
         ApiService.deleteCustomer(token, user.id, id).catch((err) => {
           console.warn('Async cloud customer delete notice:', err);
         });
@@ -262,7 +305,9 @@ export const CustomerProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       });
 
       setCustomers(updated);
-      if (!user) {
+      if (user) {
+        ApiService.cacheCustomers(user.id, updated);
+      } else {
         StorageService.saveCustomers(updated);
       }
     },
@@ -286,6 +331,7 @@ export const CustomerProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       setNotes(updated);
 
       if (user && token) {
+        ApiService.cacheNotes(user.id, updated);
         ApiService.createNote(token, user.id, newNote).catch((err) => {
           console.warn('Async cloud note save notice:', err);
         });
@@ -307,6 +353,7 @@ export const CustomerProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       setNotes(updated);
 
       if (user && token) {
+        ApiService.cacheNotes(user.id, updated);
         ApiService.updateNote(token, user.id, id, data).catch((err) => {
           console.warn('Async cloud note update notice:', err);
         });
@@ -323,6 +370,7 @@ export const CustomerProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       setNotes(updated);
 
       if (user && token) {
+        ApiService.cacheNotes(user.id, updated);
         ApiService.deleteNote(token, user.id, id).catch((err) => {
           console.warn('Async cloud note delete notice:', err);
         });
@@ -347,6 +395,7 @@ export const CustomerProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       setNotes(updated);
 
       if (user && token) {
+        ApiService.cacheNotes(user.id, updated);
         ApiService.updateNote(token, user.id, id, { isPinned: targetPinned }).catch((err) => {
           console.warn('Async cloud note pin notice:', err);
         });

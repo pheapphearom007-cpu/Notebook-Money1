@@ -5,13 +5,23 @@ import { ApiService } from '../services/api';
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<User | null>(null);
-  const [token, setToken] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
+  // Restore user session synchronously from storage so reloading never flashes/kicks back to login
+  const [user, setUser] = useState<User | null>(() => {
+    const saved = ApiService.getSavedSession();
+    return saved?.user || null;
+  });
+  const [token, setToken] = useState<string | null>(() => {
+    const saved = ApiService.getSavedSession();
+    return saved?.token || null;
+  });
+  const [isLoading, setIsLoading] = useState<boolean>(() => {
+    const saved = ApiService.getSavedSession();
+    return !saved; // If saved session exists, immediately render authenticated UI
+  });
   const [error, setError] = useState<string | null>(null);
   const [syncStatus, setSyncStatus] = useState<'synced' | 'syncing' | 'offline' | 'error'>('synced');
 
-  // Initialize and restore authentication on application load
+  // Initialize and verify authentication on application load
   useEffect(() => {
     let isMounted = true;
 
@@ -34,8 +44,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             setUser(verifiedUser);
             setToken(saved.token);
             setSyncStatus('synced');
+          } else if (saved.user) {
+            // Keep local/vault user session active so reloading never kicks the user out
+            setUser(saved.user);
+            setToken(saved.token);
+            setSyncStatus('offline');
           } else {
-            // Token expired or invalid
+            // No valid local user available
             ApiService.clearSession();
             setUser(null);
             setToken(null);
@@ -47,7 +62,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (isMounted) {
           // If network failed but user was previously saved, allow offline access with cached token
           const saved = ApiService.getSavedSession();
-          if (saved) {
+          if (saved?.user) {
             setUser(saved.user);
             setToken(saved.token);
             setSyncStatus('offline');
