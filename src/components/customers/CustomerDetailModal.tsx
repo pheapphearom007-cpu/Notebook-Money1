@@ -118,15 +118,17 @@ export const CustomerDetailModal: React.FC<CustomerDetailModalProps> = ({
           )}
         </div>
 
-        {/* Quick Contact Action Bar */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+        {/* Quick Contact Action Bar: 3 columns on mobile and desktop */}
+        <div className="grid grid-cols-3 gap-2">
           {/* Direct Phone Call */}
           <a
             href={`tel:${customer.phone.replace(/\s+/g, '')}`}
-            className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground font-semibold text-xs transition-colors shadow-xs"
+            className="flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 px-2.5 py-2.5 rounded-xl bg-primary hover:bg-[var(--primary-hover)] text-primary-foreground font-semibold text-xs transition-colors shadow-xs active:scale-95 text-center"
           >
-            <Phone className="w-4 h-4 text-primary-foreground" />
-            <span>{customer.phone}</span>
+            <Phone className="w-4 h-4 shrink-0" />
+            <span className="truncate max-w-full font-mono text-[11px] sm:text-xs">
+              {customer.phone}
+            </span>
           </a>
 
           {/* Telegram */}
@@ -135,25 +137,27 @@ export const CustomerDetailModal: React.FC<CustomerDetailModalProps> = ({
               href={`https://t.me/${customer.telegram.replace('@', '')}`}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-card hover:bg-muted text-foreground font-semibold text-xs transition-colors border border-border font-mono"
+              className="flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 px-2.5 py-2.5 rounded-xl bg-card hover:bg-muted text-foreground font-semibold text-xs transition-colors border border-border font-mono active:scale-95 text-center"
             >
-              <Send className="w-4 h-4 text-muted-foreground" />
-              <span>{customer.telegram}</span>
+              <Send className="w-4 h-4 text-muted-foreground shrink-0" />
+              <span className="truncate max-w-full text-[11px] sm:text-xs">
+                {customer.telegram}
+              </span>
             </a>
           ) : (
-            <div className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-muted/40 text-muted-foreground text-xs border border-border font-khmer">
-              <Send className="w-4 h-4 opacity-40" />
-              <span>គ្មាន Telegram</span>
+            <div className="flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 px-2.5 py-2.5 rounded-xl bg-muted/40 text-muted-foreground text-xs border border-border font-khmer opacity-60 text-center">
+              <Send className="w-4 h-4 opacity-40 shrink-0" />
+              <span className="text-[10px] sm:text-xs truncate">គ្មាន TG</span>
             </div>
           )}
 
           {/* Copy Phone */}
           <button
             onClick={() => copyToClipboard(customer.phone)}
-            className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-card hover:bg-muted text-foreground font-semibold text-xs transition-colors border border-border font-khmer cursor-pointer"
+            className="flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 px-2.5 py-2.5 rounded-xl bg-card hover:bg-muted text-foreground font-semibold text-xs transition-colors border border-border font-khmer cursor-pointer active:scale-95 text-center"
           >
-            <Copy className="w-4 h-4 text-muted-foreground" />
-            <span>{t.customerList.copyPhone}</span>
+            <Copy className="w-4 h-4 text-muted-foreground shrink-0" />
+            <span className="truncate text-[11px] sm:text-xs">{t.customerList.copyPhone}</span>
           </button>
         </div>
 

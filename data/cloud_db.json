@@ -15,6 +15,14 @@
       "salt": "0e8873f1c65c3bc858b296861199bf99",
       "passwordHash": "842b449abd982118c8c439107e4a735ee51f51548c426d1e8f6a1701565ae3626b5d0a5824b7b7b4f16fae17fa28253236f9cbf6e740f82ce1c4e7c4b9eb0aec",
       "createdAt": "2026-10-02T15:28:11.175Z"
+    },
+    {
+      "id": "user_1791341175222_681fda7a",
+      "name": "pheap phirom",
+      "email": "pheapphearom007@gmail.com",
+      "salt": "6499979bee48fb8415e1c858ad752565",
+      "passwordHash": "2a3bc4b37d21fb254aef5673f1550989b259a64eedd1751b64e62e783d00b1ee827db59cc681a1da0b38c4c4f7670ddc1f59d69075bfd78c7ba22a61bb934b0c",
+      "createdAt": "2026-10-07T02:46:15.222Z"
     }
   ],
   "sessions": [
@@ -22,9 +30,96 @@
       "token": "siev_969bd000adebafc0b33fdc8eb17bae8ff51d5cf90c24c0c8beb52904dde554d0",
       "userId": "user_demo_sovannara",
       "createdAt": "2026-10-02T15:27:34.358Z"
+    },
+    {
+      "token": "siev_dbc88a5300cbe81e3742cdd8184260b9024ec255018bf768bf5648f1b8ef487e",
+      "userId": "user_1791341175222_681fda7a",
+      "createdAt": "2026-10-07T02:46:15.222Z"
     }
   ],
   "customers": [
+    {
+      "id": "cust-1791341208238-zfmt",
+      "name": "សុខ សុវណ្ណារ៉ា",
+      "phone": "098 554 433",
+      "address": "ភូមិវត្តបូព៌ សង្កាត់សាលាកំរើក ក្រុងសៀមរាប",
+      "province": "ខេត្តសៀមរាប",
+      "date": "2026-10-02",
+      "note": "អតិថិជន VIP ប្រចាំហាង កក់សេវាកម្មជួសជុល និងតម្លើងប្រព័ន្ធកាមេរ៉ាសុវត្ថិភាព។ បានណែនាំមិត្តភក្តិ ៣ នាក់មកបន្ថែម។",
+      "status": "active",
+      "category": "vip",
+      "priority": "high",
+      "email": "sovannara.sok@yahoo.com",
+      "telegram": "@sok_sovannara",
+      "balance": 820,
+      "currency": "USD",
+      "history": [
+        {
+          "id": "hist-2-1",
+          "content": "បានទាក់ទងមកពិភាក្សាអំពីកិច្ចសន្យាថែទាំប្រចាំឆ្នាំ",
+          "createdAt": "2026-10-02T11:00:00Z"
+        }
+      ],
+      "createdAt": "2026-10-07T02:46:48.238Z",
+      "updatedAt": "2026-10-07T02:46:48.241Z",
+      "userId": "user_1791341175222_681fda7a"
+    },
+    {
+      "id": "cust-1791341208237-hmh7",
+      "name": "ឈន ពិសិដ្ឋ",
+      "phone": "012 889 977",
+      "address": "ផ្ទះលេខ 45B ផ្លូវ 271 សង្កាត់បឹងទំពុន ខណ្ឌមានជ័យ",
+      "province": "រាជធានីភ្នំពេញ",
+      "date": "2026-10-01",
+      "note": "អតិថិជនកម្ម៉ង់ទំនិញគ្រឿងអេឡិចត្រូនិចបោះដុំចំនួន ២០ ឈុត។ ដឹកជញ្ជូនរៀងរាល់ដើមខែ និងទូទាត់តាម ABA។",
+      "status": "active",
+      "category": "wholesale",
+      "priority": "high",
+      "email": "piseth.chhorn@gmail.com",
+      "telegram": "@piseth_biz",
+      "balance": 1450,
+      "currency": "USD",
+      "history": [
+        {
+          "id": "hist-1-1",
+          "content": "បានទូទាត់ប្រាក់កក់ $500 រួចរាល់តាម ABA Pay",
+          "createdAt": "2026-10-01T09:30:00Z"
+        },
+        {
+          "id": "hist-1-2",
+          "content": "បានបញ្ជាក់ការដឹកជញ្ជូនលើកទី ១ នៅថ្ងៃទី ០៥ ខាងមុខ",
+          "createdAt": "2026-10-02T08:15:00Z"
+        }
+      ],
+      "createdAt": "2026-10-07T02:46:48.237Z",
+      "updatedAt": "2026-10-07T02:46:48.240Z",
+      "userId": "user_1791341175222_681fda7a"
+    },
+    {
+      "id": "cust-1791341208237-88ne",
+      "name": "អ៊ុំ សារ៉េត",
+      "phone": "097 554 1122",
+      "address": "ចំបក់ស",
+      "province": "ខេត្តសៀមរាប",
+      "date": "2026-10-02",
+      "note": "ទិញសម្ភារ និងជីកសិកម្មជំពាក់សិន។ បានសន្យាសងបញ្ចប់នៅចុងខែក្រោយ។",
+      "status": "debt",
+      "category": "retail",
+      "priority": "medium",
+      "telegram": "0975541122",
+      "balance": 450,
+      "currency": "USD",
+      "history": [
+        {
+          "id": "hist-d-1",
+          "content": "បានកត់ត្រាប័ណ្ណជំពាក់ថ្លៃជីកសិកម្ម $450",
+          "createdAt": "2026-10-02T10:00:00Z"
+        }
+      ],
+      "createdAt": "2026-10-07T02:46:48.237Z",
+      "updatedAt": "2026-10-07T02:46:48.239Z",
+      "userId": "user_1791341175222_681fda7a"
+    },
     {
       "name": "កែវ រដ្ឋា",
       "phone": "098 776 543",
@@ -88,6 +183,19 @@
     }
   ],
   "notes": [
+    {
+      "id": "note-1791341208238-f3b6",
+      "title": "ផែនការផ្គត់ផ្គង់ទំនិញដើមខែតុលា",
+      "content": "ពិនិត្យស្តុកទំនិញគ្រឿងអេឡិចត្រូនិចដែលត្រូវបញ្ជូនទៅអតិថិជន ឈន ពិសិដ្ឋ នៅភ្នំពេញ និងរៀបចំវិក្កយបត្រតាម ABA Pay។",
+      "category": "ការងារអាជីវកម្ម",
+      "customerId": "cust-1",
+      "customerName": "ឈន ពិសិដ្ឋ",
+      "color": "yellow",
+      "isPinned": true,
+      "createdAt": "2026-10-07T02:46:48.238Z",
+      "updatedAt": "2026-10-07T02:46:48.242Z",
+      "userId": "user_1791341175222_681fda7a"
+    },
     {
       "id": "note-cloud-1",
       "userId": "user_demo_sovannara",

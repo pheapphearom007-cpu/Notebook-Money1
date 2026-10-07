@@ -39,34 +39,35 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
       />
 
       {/* Dialog */}
-      <div className="relative w-full max-w-md bg-card text-foreground rounded-2xl shadow-2xl border border-border z-10 p-6 transition-all transform scale-100 animate-scale-up">
-        <div className="flex items-start gap-4">
+      <div className="relative w-full max-w-md bg-card text-foreground rounded-2xl shadow-2xl border border-border z-10 p-5 sm:p-6 transition-all transform scale-100 animate-scale-up mx-2 sm:mx-0">
+        <div className="flex items-start gap-3 sm:gap-4">
           <div
-            className={`p-3 rounded-xl shrink-0 ${
+            className={`p-2.5 sm:p-3 rounded-xl shrink-0 ${
               isDanger
                 ? 'bg-destructive/15 text-destructive border border-destructive/30'
                 : 'bg-secondary text-secondary-foreground border border-border'
             }`}
           >
-            <AlertTriangle className="w-6 h-6" />
+            <AlertTriangle className="w-5 h-5 sm:w-6 sm:h-6" />
           </div>
           <div className="flex-1">
             <h4 className="text-base font-bold text-foreground font-khmer">
               {title}
             </h4>
-            <p className="mt-2 text-sm text-muted-foreground font-khmer leading-relaxed">
+            <p className="mt-1.5 sm:mt-2 text-xs sm:text-sm text-muted-foreground font-khmer leading-relaxed">
               {message}
             </p>
           </div>
         </div>
 
-        <div className="mt-6 flex items-center justify-end gap-3">
+        <div className="mt-5 sm:mt-6 grid grid-cols-2 sm:flex sm:items-center sm:justify-end gap-2.5 sm:gap-3">
           <Button
             type="button"
             variant="outline"
             size="sm"
             onClick={onClose}
             disabled={isLoading}
+            className="w-full sm:w-auto py-2.5 active:scale-95"
           >
             {cancelText || t.common.cancel}
           </Button>
@@ -79,6 +80,7 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
               onClose();
             }}
             isLoading={isLoading}
+            className="w-full sm:w-auto py-2.5 font-bold active:scale-95"
           >
             {confirmText || t.common.confirm}
           </Button>

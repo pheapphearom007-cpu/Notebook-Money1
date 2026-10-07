@@ -138,13 +138,13 @@ export const CustomerListView: React.FC<CustomerListViewProps> = ({
             )}
           </div>
 
-          {/* Controls: Category, Province, Sort */}
-          <div className="flex items-center flex-wrap gap-2.5">
+          {/* Controls: Category, Village, Province, Sort (2x2 grid on mobile, inline on desktop) */}
+          <div className="grid grid-cols-2 sm:flex sm:items-center sm:flex-wrap gap-2 sm:gap-2.5">
             {/* Category Dropdown */}
             <select
               value={filterOptions.category}
               onChange={(e) => setCategoryFilter(e.target.value as any)}
-              className="px-3 py-2 text-xs font-semibold rounded-xl bg-muted border border-border text-foreground outline-none focus:border-primary font-khmer cursor-pointer"
+              className="w-full sm:w-auto px-2.5 py-2 text-xs font-semibold rounded-xl bg-muted border border-border text-foreground outline-none focus:border-primary font-khmer cursor-pointer truncate"
             >
               {categories.map((cat) => (
                 <option key={cat.id} value={cat.id}>
@@ -157,7 +157,7 @@ export const CustomerListView: React.FC<CustomerListViewProps> = ({
             <select
               value={filterOptions.village || 'all'}
               onChange={(e) => setVillageFilter(e.target.value)}
-              className="px-3 py-2 text-xs font-semibold rounded-xl bg-muted border border-border text-foreground outline-none focus:border-primary font-khmer max-w-[140px] truncate cursor-pointer"
+              className="w-full sm:w-auto px-2.5 py-2 text-xs font-semibold rounded-xl bg-muted border border-border text-foreground outline-none focus:border-primary font-khmer sm:max-w-[140px] truncate cursor-pointer"
             >
               <option value="all">{t.customerList.filterByVillage}: {t.common.all}</option>
               {CAMBODIAN_VILLAGES.map((v) => (
@@ -171,7 +171,7 @@ export const CustomerListView: React.FC<CustomerListViewProps> = ({
             <select
               value={filterOptions.province}
               onChange={(e) => setProvinceFilter(e.target.value)}
-              className="px-3 py-2 text-xs font-semibold rounded-xl bg-muted border border-border text-foreground outline-none focus:border-primary font-khmer max-w-[140px] truncate cursor-pointer"
+              className="w-full sm:w-auto px-2.5 py-2 text-xs font-semibold rounded-xl bg-muted border border-border text-foreground outline-none focus:border-primary font-khmer sm:max-w-[140px] truncate cursor-pointer"
             >
               <option value="all">{t.customerList.filterByProvince}: {t.common.all}</option>
               {CAMBODIAN_PROVINCES.map((prov) => (
@@ -185,7 +185,7 @@ export const CustomerListView: React.FC<CustomerListViewProps> = ({
             <select
               value={filterOptions.sortBy}
               onChange={(e) => setSortBy(e.target.value as SortField)}
-              className="px-3 py-2 text-xs font-semibold rounded-xl bg-muted border border-border text-foreground outline-none focus:border-primary font-khmer cursor-pointer"
+              className="w-full sm:w-auto px-2.5 py-2 text-xs font-semibold rounded-xl bg-muted border border-border text-foreground outline-none focus:border-primary font-khmer cursor-pointer truncate"
             >
               {sortOptions.map((opt) => (
                 <option key={opt.id} value={opt.id}>
@@ -223,8 +223,8 @@ export const CustomerListView: React.FC<CustomerListViewProps> = ({
         </div>
 
         {/* Row 2: Status Tabs Filter */}
-        <div className="flex items-center justify-between gap-3 pt-2 border-t border-border">
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 custom-scrollbar">
+        <div className="flex items-center justify-between gap-2 sm:gap-3 pt-2 border-t border-border">
+          <div className="flex items-center gap-1.5 touch-scroll-x pb-1 -mx-1 px-1 sm:mx-0 sm:px-0">
             {statusTabs.map((tab) => {
               const count =
                 tab.id === 'all'
@@ -235,7 +235,7 @@ export const CustomerListView: React.FC<CustomerListViewProps> = ({
                 <button
                   key={tab.id}
                   onClick={() => setStatusFilter(tab.id)}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold font-khmer whitespace-nowrap transition-all flex items-center gap-1.5 cursor-pointer ${
+                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold font-khmer whitespace-nowrap transition-all flex items-center gap-1.5 cursor-pointer active:scale-95 ${
                     isActive
                       ? 'bg-primary text-primary-foreground shadow-xs'
                       : 'bg-muted text-muted-foreground hover:bg-secondary border border-border/50'

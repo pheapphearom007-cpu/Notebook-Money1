@@ -173,7 +173,8 @@ export const CustomerForm: React.FC<CustomerFormProps> = ({
               <Phone className="w-4 h-4" />
             </div>
             <input
-              type="text"
+              type="tel"
+              inputMode="tel"
               value={phone}
               onChange={(e) => {
                 setPhone(e.target.value);
@@ -402,6 +403,7 @@ export const CustomerForm: React.FC<CustomerFormProps> = ({
               <input
                 type="number"
                 step="any"
+                inputMode="decimal"
                 value={balance}
                 onChange={(e) => setBalance(e.target.value)}
                 placeholder={t.customerForm.balancePlaceholder}
@@ -412,19 +414,21 @@ export const CustomerForm: React.FC<CustomerFormProps> = ({
         </div>
       </div>
 
-      {/* Buttons */}
-      <div className="pt-4 flex items-center justify-end gap-3 border-t border-border">
+      {/* Buttons: 2 columns on mobile, aligned right on desktop */}
+      <div className="pt-4 grid grid-cols-2 sm:flex sm:items-center sm:justify-end gap-2.5 sm:gap-3 border-t border-border">
         <Button
           type="button"
           variant="outline"
           onClick={onCancel}
           disabled={isSubmitting}
+          className="w-full sm:w-auto py-2.5 active:scale-95"
         >
           {t.common.cancel}
         </Button>
         <Button
           type="submit"
           isLoading={isSubmitting}
+          className="w-full sm:w-auto py-2.5 font-bold active:scale-95"
         >
           {initialData ? t.customerForm.submitEdit : t.customerForm.submitAdd}
         </Button>

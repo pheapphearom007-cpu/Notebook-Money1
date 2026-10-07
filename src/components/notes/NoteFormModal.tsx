@@ -169,28 +169,31 @@ export const NoteFormModal: React.FC<NoteFormModalProps> = ({
             <span className="text-xs font-bold text-muted-foreground font-khmer mr-1">
               {t.notesSection.color}:
             </span>
-            {colorOptions.map((opt) => (
-              <button
-                key={opt.id}
-                type="button"
-                onClick={() => setColor(opt.id)}
-                className={`w-6 h-6 rounded-full border transition-transform cursor-pointer ${opt.bg} ${opt.border} ${
-                  color === opt.id
-                    ? 'ring-2 ring-primary scale-110 shadow-xs'
-                    : 'opacity-70 hover:opacity-100'
-                }`}
-                title={opt.id}
-              />
-            ))}
+            <div className="flex items-center gap-1.5">
+              {colorOptions.map((opt) => (
+                <button
+                  key={opt.id}
+                  type="button"
+                  onClick={() => setColor(opt.id)}
+                  className={`w-7 h-7 sm:w-6 sm:h-6 rounded-full border transition-all cursor-pointer active:scale-90 ${opt.bg} ${opt.border} ${
+                    color === opt.id
+                      ? 'ring-2 ring-primary scale-110 shadow-xs'
+                      : 'opacity-70 hover:opacity-100'
+                  }`}
+                  title={opt.id}
+                  aria-label={opt.id}
+                />
+              ))}
+            </div>
           </div>
 
           {/* Pin Toggle */}
-          <label className="flex items-center gap-2 text-xs font-bold text-foreground font-khmer cursor-pointer">
+          <label className="flex items-center gap-2 text-xs font-bold text-foreground font-khmer cursor-pointer p-1 rounded-lg hover:bg-muted active:scale-95">
             <input
               type="checkbox"
               checked={isPinned}
               onChange={(e) => setIsPinned(e.target.checked)}
-              className="w-4 h-4 text-primary rounded-md focus:ring-primary/20"
+              className="w-4 h-4 text-primary rounded-md focus:ring-primary/20 cursor-pointer"
             />
             <span className="flex items-center gap-1">
               <Pin className={`w-3.5 h-3.5 ${isPinned ? 'text-primary fill-current' : 'text-muted-foreground'}`} />
@@ -199,12 +202,12 @@ export const NoteFormModal: React.FC<NoteFormModalProps> = ({
           </label>
         </div>
 
-        {/* Buttons */}
-        <div className="flex items-center justify-end gap-3 pt-3 border-t border-border">
-          <Button type="button" variant="outline" size="sm" onClick={onClose}>
+        {/* Buttons: 2 columns on mobile, right-aligned on desktop */}
+        <div className="grid grid-cols-2 sm:flex sm:items-center sm:justify-end gap-2.5 sm:gap-3 pt-3 border-t border-border">
+          <Button type="button" variant="outline" size="sm" onClick={onClose} className="w-full sm:w-auto py-2.5 active:scale-95">
             {t.common.cancel}
           </Button>
-          <Button type="submit" size="sm">
+          <Button type="submit" size="sm" className="w-full sm:w-auto py-2.5 active:scale-95 font-bold">
             {t.common.save}
           </Button>
         </div>

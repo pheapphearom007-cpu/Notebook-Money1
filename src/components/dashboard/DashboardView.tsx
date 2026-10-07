@@ -55,38 +55,38 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   return (
     <div className="space-y-6 sm:space-y-8 animate-fade-in pb-12">
       {/* Welcome Banner using ROM LATEX Primary */}
-      <div className="relative overflow-hidden rounded-3xl bg-primary border border-primary/30 text-primary-foreground p-6 sm:p-8 shadow-sm">
-        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
+      <div className="relative overflow-hidden rounded-2xl sm:rounded-3xl bg-primary border border-primary/30 text-primary-foreground p-4.5 sm:p-8 shadow-sm">
+        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4 sm:gap-6">
           <div className="max-w-2xl">
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-primary-foreground/15 border border-primary-foreground/20 text-primary-foreground backdrop-blur-xs mb-3 font-khmer">
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 sm:px-3 sm:py-1 rounded-full text-[11px] sm:text-xs font-semibold bg-primary-foreground/15 border border-primary-foreground/20 text-primary-foreground backdrop-blur-xs mb-2 sm:mb-3 font-khmer">
               <span>🇰🇭</span>
               <span>{t.appSubtitle}</span>
             </span>
-            <h2 className="text-2xl sm:text-3xl font-extrabold tracking-tight font-khmer text-primary-foreground">
+            <h2 className="text-xl sm:text-3xl font-extrabold tracking-tight font-khmer text-primary-foreground">
               {t.dashboard.title}
             </h2>
-            <p className="mt-2 text-sm sm:text-base text-primary-foreground/80 leading-relaxed font-khmer">
+            <p className="mt-1 sm:mt-2 text-xs sm:text-base text-primary-foreground/80 leading-relaxed font-khmer">
               {t.dashboard.subtitle}
             </p>
           </div>
 
-          {/* Quick Add CTA Buttons inside banner */}
-          <div className="flex flex-wrap items-center gap-3 shrink-0">
+          {/* Quick Add CTA Buttons inside banner: 2 columns on mobile, row on desktop */}
+          <div className="grid grid-cols-2 sm:flex sm:items-center gap-2 sm:gap-3 w-full sm:w-auto shrink-0">
             <Button
-              size="md"
+              size="sm"
               variant="secondary"
               onClick={onOpenAddCustomer}
               leftIcon={<Plus className="w-4 h-4 text-primary" />}
-              className="bg-primary-foreground text-primary hover:bg-white font-bold shadow-xs border-0"
+              className="bg-primary-foreground text-primary hover:bg-white font-bold shadow-xs border-0 w-full sm:w-auto text-xs sm:text-sm py-2"
             >
               {t.dashboard.addNewCustomer}
             </Button>
             <Button
-              size="md"
+              size="sm"
               variant="secondary"
               onClick={onOpenAddNote}
               leftIcon={<StickyNote className="w-4 h-4 text-primary" />}
-              className="bg-primary-foreground text-primary hover:bg-white font-bold shadow-xs border-0"
+              className="bg-primary-foreground text-primary hover:bg-white font-bold shadow-xs border-0 w-full sm:w-auto text-xs sm:text-sm py-2"
             >
               {t.dashboard.addNewNote}
             </Button>
@@ -97,8 +97,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         <div className="absolute right-0 top-0 w-80 h-80 bg-accent/20 rounded-full blur-3xl pointer-events-none" />
       </div>
 
-      {/* 4 Primary Stats Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5">
+      {/* 4 Primary Stats Cards: 2x2 grid on mobile phones */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-5">
         <StatCard
           title={t.dashboard.totalCustomers}
           value={stats.totalCustomers}
@@ -195,11 +195,16 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                             <CategoryBadge category={customer.category} size="sm" />
                           )}
                         </div>
-                        <div className="flex items-center gap-3 text-xs text-muted-foreground mt-1 font-khmer">
-                          <span className="flex items-center gap-1 font-mono">
+                        <div className="flex items-center gap-2.5 text-xs text-muted-foreground mt-1 font-khmer">
+                          <a
+                            href={`tel:${customer.phone.replace(/\s+/g, '')}`}
+                            onClick={(e) => e.stopPropagation()}
+                            className="inline-flex items-center gap-1 font-mono text-foreground hover:text-primary active:scale-95 bg-muted sm:bg-transparent px-2 py-0.5 sm:p-0 rounded-md transition-colors"
+                            title={t.customerList.callNow}
+                          >
                             <Phone className="w-3 h-3 text-muted-foreground" />
-                            {customer.phone}
-                          </span>
+                            <span>{customer.phone}</span>
+                          </a>
                           {customer.province && (
                             <span className="hidden sm:inline truncate">
                               • {customer.province}

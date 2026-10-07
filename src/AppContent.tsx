@@ -167,8 +167,8 @@ export const AppContent: React.FC = () => {
           onOpenProfile={() => setIsProfileModalOpen(true)}
         />
 
-        {/* Main Workspace Area */}
-        <main className="flex-1 p-4 sm:p-6 lg:p-8 min-w-0">
+        {/* Main Workspace Area with bottom padding for mobile BottomNav */}
+        <main className="flex-1 p-3.5 sm:p-6 lg:p-8 min-w-0 pb-28 lg:pb-8">
           {/* Top-Left Back Button (shown on all pages except the home page) */}
           {currentTab !== 'dashboard' && (
             <div className="mb-4 sm:mb-6">

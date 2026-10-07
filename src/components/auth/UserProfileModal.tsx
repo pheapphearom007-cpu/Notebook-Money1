@@ -130,8 +130,8 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ isOpen, onCl
         </div>
 
         {/* Actions */}
-        <div className="pt-2 flex items-center justify-between border-t border-border">
-          <Button variant="outline" size="sm" onClick={onClose}>
+        <div className="pt-2 grid grid-cols-2 sm:flex sm:items-center sm:justify-between gap-2.5 sm:gap-3 border-t border-border">
+          <Button variant="outline" size="sm" onClick={onClose} className="w-full sm:w-auto py-2.5 active:scale-95">
             {t.common.close}
           </Button>
 
@@ -140,6 +140,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ isOpen, onCl
             size="sm"
             onClick={handleLogout}
             leftIcon={<LogOut className="w-4 h-4" />}
+            className="w-full sm:w-auto py-2.5 active:scale-95 font-bold"
           >
             {t.auth.logout}
           </Button>

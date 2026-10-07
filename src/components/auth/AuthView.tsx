@@ -109,7 +109,7 @@ export const AuthView: React.FC = () => {
       <div className="absolute -bottom-32 -right-32 w-96 h-96 rounded-full bg-accent/10 blur-3xl pointer-events-none" />
 
       {/* Top Header Bar: Language & Theme switches */}
-      <header className="relative z-10 max-w-5xl w-full mx-auto px-4 py-4 sm:px-6 flex items-center justify-between">
+      <header className="relative z-10 max-w-5xl w-full mx-auto px-4 py-4 sm:px-6 flex items-center justify-between pt-[max(1rem,env(safe-area-inset-top,0px))]">
         <div className="flex items-center gap-2.5">
           <div className="w-9 h-9 rounded-xl bg-primary text-primary-foreground flex items-center justify-center shadow-xs border border-primary/20">
             <BookOpen className="w-5 h-5" />

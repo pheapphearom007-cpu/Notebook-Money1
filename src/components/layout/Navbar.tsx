@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   BookOpen,
   Search,
@@ -31,6 +31,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   const { language, setLanguage, t } = useLanguage();
   const { isDark, toggleTheme } = useTheme();
   const { filterOptions, setSearchQuery } = useCustomers();
+  const [isMobileSearchOpen, setIsMobileSearchOpen] = useState(false);
 
   const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setSearchQuery(e.target.value);
@@ -44,40 +45,40 @@ export const Navbar: React.FC<NavbarProps> = ({
   };
 
   return (
-    <header className="sticky top-0 z-30 bg-card/95 backdrop-blur-md border-b border-border text-foreground transition-colors">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-16 gap-3">
+    <header className="sticky top-0 z-30 bg-card/95 backdrop-blur-md border-b border-border text-foreground transition-colors pt-[max(0rem,env(safe-area-inset-top,0px))]">
+      <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
+        <div className="flex items-center justify-between h-15 sm:h-16 gap-2 sm:gap-3">
           {/* Brand Logo & Title */}
-          <div className="flex items-center gap-3 shrink-0">
+          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
             <button
               onClick={onOpenMobileMenu}
-              className="lg:hidden p-2 rounded-xl text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer"
+              className="lg:hidden p-2 rounded-xl text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer active:scale-95"
               aria-label="Open mobile menu"
             >
               <Menu className="w-5 h-5" />
             </button>
 
-            <div className="flex items-center gap-2.5">
-              <div className="w-10 h-10 rounded-xl bg-primary text-primary-foreground flex items-center justify-center shadow-xs shrink-0 border border-primary/20">
-                <BookOpen className="w-5 h-5" />
+            <div className="flex items-center gap-2 sm:gap-2.5">
+              <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-primary text-primary-foreground flex items-center justify-center shadow-xs shrink-0 border border-primary/20">
+                <BookOpen className="w-4.5 h-4.5 sm:w-5 sm:h-5" />
               </div>
               <div className="flex flex-col">
-                <div className="flex items-center gap-2">
-                  <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-foreground font-khmer leading-none">
+                <div className="flex items-center gap-1.5 sm:gap-2">
+                  <h1 className="text-lg sm:text-2xl font-bold tracking-tight text-foreground font-khmer leading-none">
                     {t.appName}
                   </h1>
                   <span className="hidden sm:inline-flex text-[10px] uppercase font-semibold px-2 py-0.5 rounded-full bg-secondary text-secondary-foreground border border-border">
                     {language === 'km' ? 'ប្រព័ន្ធបញ្ជី' : 'Pro'}
                   </span>
                 </div>
-                <p className="text-[11px] text-muted-foreground font-normal leading-tight hidden xs:block font-khmer">
+                <p className="text-[10px] sm:text-[11px] text-muted-foreground font-normal leading-tight hidden xs:block font-khmer">
                   {t.appSubtitle}
                 </p>
               </div>
             </div>
           </div>
 
-          {/* Global Search Bar */}
+          {/* Global Search Bar (Desktop) */}
           <div className="hidden md:flex flex-1 max-w-md mx-4">
             <div className="relative w-full">
               <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-muted-foreground">
@@ -102,7 +103,15 @@ export const Navbar: React.FC<NavbarProps> = ({
           </div>
 
           {/* Right Action Tools */}
-          <div className="flex items-center gap-2 sm:gap-2.5">
+          <div className="flex items-center gap-1.5 sm:gap-2.5">
+            {/* Mobile Search Toggle Button */}
+            <button
+              onClick={() => setIsMobileSearchOpen(!isMobileSearchOpen)}
+              className="md:hidden p-2 rounded-xl text-muted-foreground hover:text-foreground bg-muted hover:bg-secondary border border-border transition-colors cursor-pointer active:scale-95"
+              aria-label="Toggle mobile search"
+            >
+              <Search className="w-4 h-4" />
+            </button>
             {/* Language Switcher Pill */}
             <div className="inline-flex items-center bg-muted p-1 rounded-xl border border-border">
               <button
@@ -176,6 +185,40 @@ export const Navbar: React.FC<NavbarProps> = ({
             )}
           </div>
         </div>
+
+        {/* Mobile Expandable Search Bar */}
+        {isMobileSearchOpen && (
+          <div className="md:hidden pb-3 pt-1 animate-slide-up">
+            <div className="relative w-full">
+              <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-muted-foreground">
+                <Search className="w-4 h-4" />
+              </div>
+              <input
+                type="text"
+                autoFocus
+                value={filterOptions.searchQuery}
+                onChange={handleSearchChange}
+                placeholder={t.customerList.searchPlaceholder}
+                className="w-full pl-10 pr-9 py-2 text-sm bg-muted focus:bg-card text-foreground placeholder:text-muted-foreground rounded-xl border border-border focus:border-primary focus:ring-1 focus:ring-primary/20 transition-all outline-none font-khmer shadow-inner"
+              />
+              {filterOptions.searchQuery ? (
+                <button
+                  onClick={clearSearch}
+                  className="absolute inset-y-0 right-0 pr-3 flex items-center text-muted-foreground hover:text-foreground cursor-pointer"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              ) : (
+                <button
+                  onClick={() => setIsMobileSearchOpen(false)}
+                  className="absolute inset-y-0 right-0 pr-3 flex items-center text-muted-foreground hover:text-foreground cursor-pointer"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+          </div>
+        )}
       </div>
     </header>
   );

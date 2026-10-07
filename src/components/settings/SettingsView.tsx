@@ -177,13 +177,14 @@ export const SettingsView: React.FC = () => {
               </div>
             </div>
 
-            <div className="flex items-center gap-2.5 sm:self-center">
+            <div className="grid grid-cols-2 sm:flex sm:items-center gap-2 sm:gap-2.5 w-full sm:w-auto">
               <Button
                 variant="outline"
                 size="sm"
                 onClick={handleManualSync}
                 isLoading={isSyncing}
                 leftIcon={<RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />}
+                className="w-full sm:w-auto py-2.5"
               >
                 {t.auth.syncNow || 'ធ្វើសមកាលកម្មឥឡូវ'}
               </Button>
@@ -192,7 +193,7 @@ export const SettingsView: React.FC = () => {
                 size="sm"
                 onClick={() => setIsLogoutConfirmOpen(true)}
                 leftIcon={<LogOut className="w-3.5 h-3.5 text-destructive" />}
-                className="hover:border-destructive hover:text-destructive"
+                className="hover:border-destructive hover:text-destructive w-full sm:w-auto py-2.5"
               >
                 {t.auth.signOut}
               </Button>
