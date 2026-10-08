@@ -55,28 +55,28 @@ export const CustomerCard: React.FC<CustomerCardProps> = ({
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0">
             <div className="w-11 h-11 rounded-xl bg-secondary border border-border text-foreground font-bold flex items-center justify-center text-sm shrink-0 font-khmer shadow-xs">
-              {getInitials(customer.name)}
+              {getInitials(customer.customerName || customer.name)}
             </div>
             <div className="min-w-0">
               <h4 className="font-bold text-foreground font-khmer text-base group-hover:text-primary transition-colors truncate">
-                {customer.name}
+                {customer.customerName || customer.name}
               </h4>
               <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
                 <StatusBadge status={customer.status} size="sm" />
-                {customer.category && (
-                  <CategoryBadge category={customer.category} size="sm" />
+                {(customer.productCategory || customer.category) && (
+                  <CategoryBadge category={(customer.productCategory || customer.category) as any} size="sm" />
                 )}
               </div>
             </div>
           </div>
 
-          {customer.balance !== undefined && customer.balance > 0 && (
+          {(customer.outstandingDebt !== undefined || customer.balance !== undefined) && (
             <div className="text-right shrink-0">
               <span className="text-[10px] text-muted-foreground uppercase font-semibold font-khmer block">
-                សមតុល្យ
+                ប្រាក់ជំពាក់
               </span>
-              <span className="text-xs font-mono font-bold text-foreground">
-                ${customer.balance.toFixed(2)}
+              <span className="text-xs font-mono font-bold text-amber-900 dark:text-amber-400">
+                ${Number(customer.outstandingDebt ?? customer.balance ?? 0).toFixed(2)}
               </span>
             </div>
           )}
@@ -125,9 +125,9 @@ export const CustomerCard: React.FC<CustomerCardProps> = ({
           </div>
 
           {/* Note Excerpt */}
-          {customer.note && (
+          {(customer.notes || customer.note) && (
             <div className="p-2.5 rounded-xl bg-muted border border-border font-khmer text-muted-foreground text-xs line-clamp-2 leading-relaxed">
-              {customer.note}
+              {customer.notes || customer.note}
             </div>
           )}
         </div>

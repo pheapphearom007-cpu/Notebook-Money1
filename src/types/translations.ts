@@ -100,11 +100,22 @@ export interface Translations {
     balancePlaceholder: string;
     submitAdd: string;
     submitEdit: string;
+    productCategory: string;
+    amount: string;
+    amountPlaceholder: string;
+    priceOfGoods: string;
+    priceOfGoodsPlaceholder: string;
+    outstandingDebt: string;
+    outstandingDebtPlaceholder: string;
+    notes: string;
     validation: {
       nameRequired: string;
       phoneRequired: string;
       phoneInvalid: string;
       dateRequired: string;
+      amountInvalid: string;
+      priceInvalid: string;
+      debtInvalid: string;
     };
   };
   customerList: {
@@ -263,6 +274,20 @@ export interface Translations {
     signOutConfirm: string;
     cloudDataTitle: string;
     multiDeviceSupported: string;
+    forgotPassword: string;
+    resetPasswordTitle: string;
+    resetPasswordSubtitle: string;
+    sendResetLink: string;
+    resetLinkSent: string;
+    newPasswordTitle: string;
+    newPasswordSubtitle: string;
+    submitNewPassword: string;
+    passwordResetSuccess: string;
+    backToSignIn: string;
+    migrateData: string;
+    migrateDataDesc: string;
+    migrating: string;
+    migrateSuccess: string;
     validation: {
       nameRequired: string;
       emailRequired: string;

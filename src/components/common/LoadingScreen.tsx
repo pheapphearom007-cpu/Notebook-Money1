@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { BookOpen, ShieldCheck } from 'lucide-react';
+import { ShieldCheck } from 'lucide-react';
+import { AppLogo } from './AppLogo';
 import { useLanguage } from '../../context/LanguageContext';
 
 interface LoadingScreenProps {
@@ -41,10 +42,8 @@ export const LoadingScreen: React.FC<LoadingScreenProps> = ({ isLoading }) => {
       <div className="relative z-10 flex flex-col items-center text-center px-6 max-w-sm w-full animate-fade-in">
         {/* Brand Logo Emblem with Pulse */}
         <div className="relative mb-6">
-          <div className="absolute inset-0 rounded-2xl bg-primary blur-md opacity-25 animate-pulse" />
-          <div className="relative w-16 h-16 rounded-2xl bg-primary text-primary-foreground flex items-center justify-center shadow-lg transform transition-transform hover:scale-105 border border-primary/20">
-            <BookOpen className="w-8 h-8 stroke-[2.2]" />
-          </div>
+          <div className="absolute inset-0 rounded-2xl bg-primary/20 blur-xl opacity-40 animate-pulse" />
+          <AppLogo size="xl" className="relative shadow-lg hover:scale-105" alt={t.appName || 'សៀវភៅបញ្ជី'} />
         </div>
 
         {/* Brand App Name */}

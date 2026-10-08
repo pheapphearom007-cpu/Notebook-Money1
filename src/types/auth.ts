@@ -1,5 +1,5 @@
 export interface User {
-  id: string;
+  id: string; // Unique Supabase Auth user ID (UUID)
   name: string;
   email: string;
   createdAt: string;
@@ -31,6 +31,10 @@ export interface AuthContextType {
   login: (payload: LoginPayload) => Promise<{ success: boolean; error?: string }>;
   register: (payload: RegisterPayload) => Promise<{ success: boolean; error?: string }>;
   logout: () => Promise<void>;
+  resetPasswordForEmail: (email: string) => Promise<{ success: boolean; error?: string }>;
+  updatePassword: (newPassword: string) => Promise<{ success: boolean; error?: string }>;
+  isPasswordRecovery: boolean;
+  setIsPasswordRecovery: (isRecovery: boolean) => void;
   clearError: () => void;
   syncStatus: 'synced' | 'syncing' | 'offline' | 'error';
 }

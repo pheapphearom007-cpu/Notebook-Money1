@@ -80,16 +80,16 @@ export const CustomerDetailModal: React.FC<CustomerDetailModalProps> = ({
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4.5 rounded-2xl bg-card border border-border">
           <div className="flex items-center gap-4">
             <div className="w-14 h-14 rounded-2xl bg-primary text-primary-foreground font-bold flex items-center justify-center text-xl shrink-0 font-khmer shadow-xs">
-              {getInitials(customer.name)}
+              {getInitials(customer.customerName || customer.name)}
             </div>
             <div>
               <div className="flex items-center gap-2 flex-wrap">
                 <h3 className="text-xl font-bold text-foreground font-khmer">
-                  {customer.name}
+                  {customer.customerName || customer.name}
                 </h3>
                 <StatusBadge status={customer.status} size="sm" />
-                {customer.category && (
-                  <CategoryBadge category={customer.category} size="sm" />
+                {(customer.productCategory || customer.category) && (
+                  <CategoryBadge category={(customer.productCategory || customer.category) as any} size="sm" />
                 )}
               </div>
               <p className="text-xs text-muted-foreground mt-1 flex items-center gap-2 font-mono">
@@ -105,14 +105,14 @@ export const CustomerDetailModal: React.FC<CustomerDetailModalProps> = ({
             </div>
           </div>
 
-          {/* Ledger Balance Card */}
-          {customer.balance !== undefined && (
-            <div className="sm:text-right bg-muted/60 p-3 sm:px-4 sm:py-2 rounded-xl border border-border">
-              <span className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground font-khmer block">
-                សមតុល្យ / Balance
+          {/* Ledger Debt Card */}
+          {(customer.outstandingDebt !== undefined || customer.balance !== undefined) && (
+            <div className="sm:text-right bg-amber-500/10 dark:bg-amber-500/5 p-3 sm:px-4 sm:py-2 rounded-xl border border-amber-500/30">
+              <span className="text-[11px] uppercase tracking-wider font-semibold text-amber-900 dark:text-amber-400 font-khmer block">
+                ប្រាក់ជំពាក់ / Outstanding Debt
               </span>
-              <span className="text-xl font-mono font-extrabold text-foreground">
-                ${customer.balance.toFixed(2)}
+              <span className="text-xl font-mono font-extrabold text-amber-900 dark:text-amber-400">
+                ${Number(customer.outstandingDebt ?? customer.balance ?? 0).toFixed(2)}
               </span>
             </div>
           )}
@@ -203,14 +203,42 @@ export const CustomerDetailModal: React.FC<CustomerDetailModalProps> = ({
           </div>
         </div>
 
+        {/* Goods & Debt Breakdown */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-3.5 rounded-xl bg-card border border-border text-xs">
+          <div>
+            <span className="font-bold text-muted-foreground uppercase tracking-wider font-khmer block mb-0.5">
+              {t.customerForm.amount}
+            </span>
+            <span className="font-mono font-bold text-foreground text-sm">
+              {customer.amount ?? 0}
+            </span>
+          </div>
+          <div>
+            <span className="font-bold text-muted-foreground uppercase tracking-wider font-khmer block mb-0.5">
+              {t.customerForm.priceOfGoods}
+            </span>
+            <span className="font-mono font-bold text-foreground text-sm">
+              ${Number(customer.priceOfGoods ?? 0).toFixed(2)}
+            </span>
+          </div>
+          <div>
+            <span className="font-bold text-amber-900 dark:text-amber-400 uppercase tracking-wider font-khmer block mb-0.5">
+              {t.customerForm.outstandingDebt}
+            </span>
+            <span className="font-mono font-bold text-amber-900 dark:text-amber-400 text-sm">
+              ${Number(customer.outstandingDebt ?? customer.balance ?? 0).toFixed(2)}
+            </span>
+          </div>
+        </div>
+
         {/* Note / Description Section */}
         <div className="p-4 rounded-xl bg-card border border-border">
           <div className="flex items-center gap-2 text-foreground font-bold text-xs font-khmer mb-2">
             <MessageSquare className="w-4 h-4 text-primary" />
-            <span>{t.customerForm.note}</span>
+            <span>{t.customerForm.notes}</span>
           </div>
           <p className="text-sm text-foreground font-khmer leading-relaxed whitespace-pre-wrap">
-            {customer.note || 'មិនទាន់មានកំណត់ចំណាំពិស្ដារនៅឡើយទេ។'}
+            {customer.notes || customer.note || 'មិនទាន់មានកំណត់ចំណាំពិស្ដារនៅឡើយទេ។'}
           </p>
         </div>
 

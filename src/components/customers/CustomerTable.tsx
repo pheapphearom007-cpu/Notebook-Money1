@@ -70,19 +70,19 @@ export const CustomerTable: React.FC<CustomerTableProps> = ({
               <td className="py-4 px-4 sm:px-6 whitespace-nowrap">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-xl bg-secondary border border-border text-foreground font-bold flex items-center justify-center text-sm shrink-0 font-khmer shadow-xs">
-                    {getInitials(customer.name)}
+                    {getInitials(customer.customerName || customer.name)}
                   </div>
                   <div>
                     <h4 className="font-bold text-foreground font-khmer group-hover:text-primary transition-colors">
-                      {customer.name}
+                      {customer.customerName || customer.name}
                     </h4>
                     <div className="flex items-center gap-1.5 mt-0.5">
-                      {customer.category && (
-                        <CategoryBadge category={customer.category} size="sm" />
+                      {(customer.productCategory || customer.category) && (
+                        <CategoryBadge category={(customer.productCategory || customer.category) as any} size="sm" />
                       )}
-                      {customer.balance !== undefined && customer.balance > 0 && (
-                        <span className="text-[11px] font-mono text-foreground font-semibold">
-                          ${customer.balance.toFixed(2)}
+                      {(customer.outstandingDebt !== undefined || customer.balance !== undefined) && (
+                        <span className="text-[11px] font-mono text-amber-900 dark:text-amber-400 font-semibold">
+                          ${Number(customer.outstandingDebt ?? customer.balance ?? 0).toFixed(2)}
                         </span>
                       )}
                     </div>
@@ -158,7 +158,7 @@ export const CustomerTable: React.FC<CustomerTableProps> = ({
               {/* Short Note Preview */}
               <td className="py-4 px-4">
                 <p className="text-xs text-muted-foreground font-khmer line-clamp-2 max-w-xs leading-relaxed">
-                  {customer.note || '—'}
+                  {customer.notes || customer.note || '—'}
                 </p>
               </td>
 

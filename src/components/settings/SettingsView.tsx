@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import { Button } from '../common/Button';
 import { ConfirmDialog } from '../common/ConfirmDialog';
+import { AppLogo } from '../common/AppLogo';
 import { useLanguage } from '../../context/LanguageContext';
 import { useTheme } from '../../context/ThemeContext';
 import { useCustomers } from '../../context/CustomerContext';
@@ -45,6 +46,7 @@ export const SettingsView: React.FC = () => {
     resetToSample,
     clearAll,
     refreshData,
+    migrateLocalDataToCloud,
   } = useCustomers();
   const { showToast } = useToast();
 
@@ -54,6 +56,7 @@ export const SettingsView: React.FC = () => {
   const [isClearConfirmOpen, setIsClearConfirmOpen] = useState(false);
   const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isMigrating, setIsMigrating] = useState(false);
 
   // Supabase Custom Config State
   const [isSupabaseFormOpen, setIsSupabaseFormOpen] = useState(false);
@@ -65,6 +68,25 @@ export const SettingsView: React.FC = () => {
   );
 
   const isSupabaseActive = isSupabaseConfigured();
+
+  const handleMigrate = async () => {
+    setIsMigrating(true);
+    try {
+      const res = await migrateLocalDataToCloud();
+      if (res.success) {
+        showToast(
+          `${t.auth.migrateSuccess || 'បានផ្ទេរទិន្នន័យដោយជោគជ័យ!'} (${res.customersMigrated} អតិថិជន, ${res.notesMigrated} កំណត់ចំណាំ)`,
+          'success'
+        );
+      } else {
+        showToast(`បរាជ័យក្នុងការផ្ទេរទិន្នន័យ: ${res.error}`, 'error');
+      }
+    } catch (err: any) {
+      showToast(`កំហុស៖ ${err.message}`, 'error');
+    } finally {
+      setIsMigrating(false);
+    }
+  };
 
   const handleImportFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -412,6 +434,28 @@ export const SettingsView: React.FC = () => {
                   </div>
                 </form>
               )}
+
+              {/* Data Migration Option (Section 16) */}
+              <div className="mt-4 pt-4 border-t border-border flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-muted/30 p-3.5 rounded-xl">
+                <div>
+                  <h4 className="text-xs font-bold text-foreground font-khmer">
+                    {t.auth.migrateData}
+                  </h4>
+                  <p className="text-[11px] text-muted-foreground font-khmer mt-0.5">
+                    {t.auth.migrateDataDesc}
+                  </p>
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleMigrate}
+                  isLoading={isMigrating}
+                  leftIcon={<Upload className="w-3.5 h-3.5 text-primary" />}
+                  className="font-khmer text-xs shrink-0"
+                >
+                  {isMigrating ? t.auth.migrating : t.auth.migrateData}
+                </Button>
+              </div>
             </div>
           </div>
         </div>
@@ -560,9 +604,7 @@ export const SettingsView: React.FC = () => {
       {/* 5. About App Section */}
       <div className="bg-card rounded-2xl border border-border p-5 sm:p-6 shadow-xs">
         <div className="flex items-start gap-4">
-          <div className="w-10 h-10 rounded-xl bg-muted text-muted-foreground flex items-center justify-center shrink-0 border border-border">
-            <Info className="w-5 h-5" />
-          </div>
+          <AppLogo size="md" alt={t.appName} />
           <div className="flex-1">
             <div className="flex items-center justify-between">
               <h3 className="text-base font-bold text-foreground font-khmer">

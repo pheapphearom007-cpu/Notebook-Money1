@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import {
-  BookOpen,
   Search,
   Plus,
   Sun,
@@ -8,6 +7,7 @@ import {
   Menu,
   X,
 } from 'lucide-react';
+import { AppLogo } from '../common/AppLogo';
 import { useLanguage } from '../../context/LanguageContext';
 import { useTheme } from '../../context/ThemeContext';
 import { useCustomers } from '../../context/CustomerContext';
@@ -59,9 +59,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             </button>
 
             <div className="flex items-center gap-2 sm:gap-2.5">
-              <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-primary text-primary-foreground flex items-center justify-center shadow-xs shrink-0 border border-primary/20">
-                <BookOpen className="w-4.5 h-4.5 sm:w-5 sm:h-5" />
-              </div>
+              <AppLogo size="md" alt={t.appName} />
               <div className="flex flex-col">
                 <div className="flex items-center gap-1.5 sm:gap-2">
                   <h1 className="text-lg sm:text-2xl font-bold tracking-tight text-foreground font-khmer leading-none">

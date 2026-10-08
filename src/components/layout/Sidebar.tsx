@@ -8,6 +8,7 @@ import {
   X,
   LogOut,
 } from 'lucide-react';
+import { AppLogo } from '../common/AppLogo';
 import { useLanguage } from '../../context/LanguageContext';
 import { useCustomers } from '../../context/CustomerContext';
 import { useAuth } from '../../context/AuthContext';
@@ -77,9 +78,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
       <div className="space-y-6">
         {/* Mobile Header Close */}
         <div className="lg:hidden flex items-center justify-between pb-3 border-b border-border">
-          <span className="font-bold text-base text-foreground font-khmer">
-            {t.appName}
-          </span>
+          <div className="flex items-center gap-2">
+            <AppLogo size="xs" alt={t.appName} />
+            <span className="font-bold text-base text-foreground font-khmer">
+              {t.appName}
+            </span>
+          </div>
           <button
             onClick={onCloseMobile}
             className="p-1 rounded-lg text-muted-foreground hover:text-foreground cursor-pointer"

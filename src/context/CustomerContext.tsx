@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useMemo, useCallback, useEffect } from 'react';
+import React, { createContext, useContext, useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import {
   Customer,
   CustomerStatus,
@@ -6,10 +6,13 @@ import {
   CustomerFilterOptions,
   SortField,
   SortOrder,
+  generateUUID,
 } from '../types/customer';
 import { GeneralNote } from '../types/note';
 import { StorageService } from '../services/storage';
 import { ApiService } from '../services/api';
+import { CustomerService } from '../services/customerService';
+import { isSupabaseConfigured } from '../lib/supabase';
 import { useAuth } from './AuthContext';
 import { INITIAL_CUSTOMERS, INITIAL_NOTES } from '../services/sampleData';
 
@@ -40,21 +43,22 @@ interface CustomerContextType {
   setSortBy: (field: SortField) => void;
   setSortOrder: (order: SortOrder) => void;
   resetFilters: () => void;
-  addCustomer: (data: Omit<Customer, 'id' | 'createdAt' | 'updatedAt'>) => Customer;
-  updateCustomer: (id: string, data: Partial<Customer>) => void;
-  deleteCustomer: (id: string) => void;
-  addCustomerHistoryNote: (customerId: string, noteContent: string) => void;
-  addNote: (data: Omit<GeneralNote, 'id' | 'createdAt' | 'updatedAt'>) => GeneralNote;
-  updateNote: (id: string, data: Partial<GeneralNote>) => void;
-  deleteNote: (id: string) => void;
-  togglePinNote: (id: string) => void;
+  addCustomer: (data: Omit<Customer, 'id' | 'createdAt' | 'updatedAt'>) => Promise<Customer>;
+  updateCustomer: (id: string, data: Partial<Customer>) => Promise<void>;
+  deleteCustomer: (id: string) => Promise<void>;
+  addCustomerHistoryNote: (customerId: string, noteContent: string) => Promise<void>;
+  addNote: (data: Omit<GeneralNote, 'id' | 'createdAt' | 'updatedAt'>) => Promise<GeneralNote>;
+  updateNote: (id: string, data: Partial<GeneralNote>) => Promise<void>;
+  deleteNote: (id: string) => Promise<void>;
+  togglePinNote: (id: string) => Promise<void>;
   stats: CustomerStats;
   exportJson: () => void;
   exportCsv: () => void;
   importJson: (file: File) => Promise<{ success: boolean; customerCount?: number; noteCount?: number; error?: string }>;
-  resetToSample: () => void;
-  clearAll: () => void;
+  resetToSample: () => Promise<void>;
+  clearAll: () => Promise<void>;
   refreshData: () => Promise<void>;
+  migrateLocalDataToCloud: () => Promise<{ success: boolean; customersMigrated: number; notesMigrated: number; error?: string }>;
 }
 
 const defaultFilterOptions: CustomerFilterOptions = {
@@ -67,44 +71,12 @@ const defaultFilterOptions: CustomerFilterOptions = {
   sortOrder: 'desc',
 };
 
-// Intelligently merges cloud and local records using last-write-wins (updatedAt) conflict resolution
-function mergeRecords<T extends { id: string; updatedAt?: string; createdAt?: string }>(
-  cloudList: T[],
-  localList: T[]
-): T[] {
-  const map = new Map<string, T>();
-
-  // 1. Insert local cached items
-  for (const item of localList) {
-    if (item && item.id) {
-      map.set(item.id, item);
-    }
-  }
-
-  // 2. Merge cloud items: if newer than local, cloud wins; if cloud is brand new, cloud added
-  for (const cloudItem of cloudList) {
-    if (!cloudItem || !cloudItem.id) continue;
-    const localItem = map.get(cloudItem.id);
-    if (!localItem) {
-      map.set(cloudItem.id, cloudItem);
-    } else {
-      const cloudTime = new Date(cloudItem.updatedAt || cloudItem.createdAt || 0).getTime();
-      const localTime = new Date(localItem.updatedAt || localItem.createdAt || 0).getTime();
-      if (cloudTime > localTime) {
-        map.set(cloudItem.id, cloudItem);
-      }
-    }
-  }
-
-  return Array.from(map.values());
-}
-
 const CustomerContext = createContext<CustomerContextType | undefined>(undefined);
 
 export const CustomerProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { user, token } = useAuth();
+  const { user } = useAuth();
 
-  // Initialize records synchronously from local vault cache to prevent layout jumps or empty flashes on reload
+  // Initialize records from local vault cache to prevent layout jumps on reload
   const [customers, setCustomers] = useState<Customer[]>(() => {
     const saved = ApiService.getSavedSession()?.user;
     const targetUserId = user?.id || saved?.id;
@@ -135,6 +107,20 @@ export const CustomerProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
   const [filterOptions, setFilterOptions] = useState<CustomerFilterOptions>(defaultFilterOptions);
 
+  // Keep ref of customers for realtime callbacks to avoid stale state
+  const customersRef = useRef<Customer[]>(customers);
+  useEffect(() => {
+    customersRef.current = customers;
+  }, [customers]);
+
+  const notesRef = useRef<GeneralNote[]>(notes);
+  useEffect(() => {
+    notesRef.current = notes;
+  }, [notes]);
+
+  // ============================================================================
+  // LOAD & REFRESH DATA (Source of Truth: Cloud PostgreSQL)
+  // ============================================================================
   const refreshData = useCallback(async () => {
     if (!user) {
       setCustomers([]);
@@ -146,89 +132,32 @@ export const CustomerProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     const cachedCust = ApiService.getCachedCustomers(user.id);
     const cachedNotes = ApiService.getCachedNotes(user.id);
 
-    // Only display blocking loading screen if user has zero local cached records
     if (cachedCust.length === 0 && cachedNotes.length === 0) {
       setIsDataLoading(true);
     }
 
     try {
-      const [cloudCustomers, cloudNotes] = await Promise.all([
-        ApiService.getCustomers(token || '', user.id),
-        ApiService.getNotes(token || '', user.id),
-      ]);
+      if (isSupabaseConfigured()) {
+        const [cloudCustomers, cloudNotes] = await Promise.all([
+          CustomerService.getCustomers(user.id),
+          CustomerService.getNotes(user.id),
+        ]);
 
-      // If cloud returned empty
-      if (cloudCustomers.length === 0 && cloudNotes.length === 0) {
-        // If user already has local cached data, keep it! Never overwrite with empty
-        if (cachedCust.length > 0 || cachedNotes.length > 0) {
-          setCustomers(cachedCust);
-          setNotes(cachedNotes);
-          setIsDataLoading(false);
-
-          // Push local records to cloud in background
-          if (token) {
-            cachedCust.forEach((c) => ApiService.createCustomer(token, user.id, c));
-            cachedNotes.forEach((n) => ApiService.createNote(token, user.id, n));
-          }
-          return;
-        }
-
-        // Brand new account with zero cloud or local records: provide initial seed
-        const seedCustomers = INITIAL_CUSTOMERS.slice(0, 3).map((c) => ({
-          ...c,
-          id: `cust-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-          userId: user.id,
-        }));
-        const seedNotes = INITIAL_NOTES.slice(0, 1).map((n) => ({
-          ...n,
-          id: `note-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-          userId: user.id,
-        }));
-
-        setCustomers(seedCustomers);
-        setNotes(seedNotes);
-        ApiService.cacheCustomers(user.id, seedCustomers);
-        ApiService.cacheNotes(user.id, seedNotes);
-
-        // Persist seed to server in background
-        if (token) {
-          seedCustomers.forEach((c) => ApiService.createCustomer(token, user.id, c));
-          seedNotes.forEach((n) => ApiService.createNote(token, user.id, n));
-        }
-        setIsDataLoading(false);
-        return;
-      }
-
-      // Merge cloud and local records using last-write-wins timestamp resolution
-      const mergedCustomers = mergeRecords(cloudCustomers, cachedCust);
-      const mergedNotes = mergeRecords(cloudNotes, cachedNotes);
-
-      setCustomers(mergedCustomers);
-      setNotes(mergedNotes);
-      ApiService.cacheCustomers(user.id, mergedCustomers);
-      ApiService.cacheNotes(user.id, mergedNotes);
-
-      // If any local record was updated more recently than cloud, sync it to cloud in background
-      if (token) {
-        for (const cust of mergedCustomers) {
-          const cloudCust = cloudCustomers.find((c) => c.id === cust.id);
-          const localTime = new Date(cust.updatedAt || cust.createdAt || 0).getTime();
-          const cloudTime = cloudCust ? new Date(cloudCust.updatedAt || cloudCust.createdAt || 0).getTime() : 0;
-          if (localTime > cloudTime) {
-            ApiService.updateCustomer(token, user.id, cust.id, cust).catch(() => {});
-          }
-        }
-        for (const note of mergedNotes) {
-          const cloudNote = cloudNotes.find((n) => n.id === note.id);
-          const localTime = new Date(note.updatedAt || note.createdAt || 0).getTime();
-          const cloudTime = cloudNote ? new Date(cloudNote.updatedAt || cloudNote.createdAt || 0).getTime() : 0;
-          if (localTime > cloudTime) {
-            ApiService.updateNote(token, user.id, note.id, note).catch(() => {});
-          }
-        }
+        setCustomers(cloudCustomers);
+        setNotes(cloudNotes);
+        ApiService.cacheCustomers(user.id, cloudCustomers);
+        ApiService.cacheNotes(user.id, cloudNotes);
+      } else {
+        // Fallback: Central API / local vault
+        const [cloudCust, cloudNotes] = await Promise.all([
+          ApiService.getCustomers('', user.id),
+          ApiService.getNotes('', user.id),
+        ]);
+        setCustomers(cloudCust);
+        setNotes(cloudNotes);
       }
     } catch (err) {
-      console.warn('Network issue loading cloud records, using local vault:', err);
+      console.warn('Network issue fetching cloud records, fallback to local vault cache:', err);
       const fallbackCust = ApiService.getCachedCustomers(user.id);
       const fallbackNotes = ApiService.getCachedNotes(user.id);
       setCustomers(fallbackCust);
@@ -236,14 +165,446 @@ export const CustomerProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     } finally {
       setIsDataLoading(false);
     }
-  }, [user, token]);
+  }, [user]);
 
-  // Synchronize customer & note records for the authenticated user
+  // Reload when user changes
   useEffect(() => {
     refreshData();
   }, [refreshData]);
 
-  // Filter setters
+  // ============================================================================
+  // SUPABASE REALTIME SUBSCRIPTION (Multi-device live sync)
+  // ============================================================================
+  useEffect(() => {
+    if (!user || !isSupabaseConfigured()) {
+      return;
+    }
+
+    const currentUserId = user.id;
+
+    // Realtime Customer Listener with DUPLICATE PREVENTION
+    const unsubscribeCustomers = CustomerService.subscribeToCustomers(currentUserId, {
+      onInsert: (newCustomer) => {
+        setCustomers((prev) => {
+          // Realtime duplicate prevention
+          const exists = prev.some((c) => c.id === newCustomer.id);
+          if (exists) {
+            return prev.map((c) => (c.id === newCustomer.id ? { ...c, ...newCustomer } : c));
+          }
+          const updated = [newCustomer, ...prev];
+          ApiService.cacheCustomers(currentUserId, updated);
+          return updated;
+        });
+      },
+      onUpdate: (updatedCustomer) => {
+        setCustomers((prev) => {
+          const updated = prev.map((c) =>
+            c.id === updatedCustomer.id ? { ...c, ...updatedCustomer } : c
+          );
+          ApiService.cacheCustomers(currentUserId, updated);
+          return updated;
+        });
+      },
+      onDelete: (deletedId) => {
+        setCustomers((prev) => {
+          const updated = prev.filter((c) => c.id !== deletedId);
+          ApiService.cacheCustomers(currentUserId, updated);
+          return updated;
+        });
+      },
+    });
+
+    // Realtime Notes Listener
+    const unsubscribeNotes = CustomerService.subscribeToNotes(currentUserId, {
+      onInsert: (newNote) => {
+        setNotes((prev) => {
+          const exists = prev.some((n) => n.id === newNote.id);
+          if (exists) {
+            return prev.map((n) => (n.id === newNote.id ? { ...n, ...newNote } : n));
+          }
+          const updated = [newNote, ...prev];
+          ApiService.cacheNotes(currentUserId, updated);
+          return updated;
+        });
+      },
+      onUpdate: (updatedNote) => {
+        setNotes((prev) => {
+          const updated = prev.map((n) => (n.id === updatedNote.id ? { ...n, ...updatedNote } : n));
+          ApiService.cacheNotes(currentUserId, updated);
+          return updated;
+        });
+      },
+      onDelete: (deletedId) => {
+        setNotes((prev) => {
+          const updated = prev.filter((n) => n.id !== deletedId);
+          ApiService.cacheNotes(currentUserId, updated);
+          return updated;
+        });
+      },
+    });
+
+    // Clean up Supabase channels on unmount or user change
+    return () => {
+      unsubscribeCustomers();
+      unsubscribeNotes();
+    };
+  }, [user]);
+
+  // ============================================================================
+  // CUSTOMER CRUD
+  // ============================================================================
+  const addCustomer = useCallback(
+    async (data: Omit<Customer, 'id' | 'createdAt' | 'updatedAt'>): Promise<Customer> => {
+      if (!user) {
+        throw new Error('User must be authenticated to add customers');
+      }
+
+      const now = new Date().toISOString();
+      const rawDebt = Number(data.outstandingDebt ?? data.balance ?? 0);
+      const name = data.customerName || data.name;
+      const newCustomer: Customer = {
+        ...data,
+        id: generateUUID(),
+        userId: user.id,
+        customerName: name,
+        name,
+        outstandingDebt: rawDebt,
+        balance: rawDebt,
+        history: data.history || [],
+        createdAt: now,
+        updatedAt: now,
+      };
+
+      // Optimistic update
+      setCustomers((prev) => {
+        const updated = [newCustomer, ...prev.filter((c) => c.id !== newCustomer.id)];
+        ApiService.cacheCustomers(user.id, updated);
+        return updated;
+      });
+
+      // Cloud PostgreSQL insertion
+      if (isSupabaseConfigured()) {
+        try {
+          const savedCloud = await CustomerService.createCustomer(user.id, data);
+          setCustomers((prev) => {
+            const updated = prev.map((c) => (c.id === newCustomer.id ? savedCloud : c));
+            ApiService.cacheCustomers(user.id, updated);
+            return updated;
+          });
+          return savedCloud;
+        } catch (err) {
+          console.error('Failed to save customer to cloud:', err);
+          throw err;
+        }
+      } else {
+        await ApiService.createCustomer('', user.id, newCustomer);
+      }
+
+      return newCustomer;
+    },
+    [user]
+  );
+
+  const updateCustomer = useCallback(
+    async (id: string, data: Partial<Customer>): Promise<void> => {
+      if (!user) return;
+      const now = new Date().toISOString();
+
+      // Optimistic update
+      setCustomers((prev) => {
+        const updated = prev.map((c) => {
+          if (c.id === id) {
+            const debt = data.outstandingDebt !== undefined ? data.outstandingDebt : (data.balance !== undefined ? data.balance : c.outstandingDebt);
+            return {
+              ...c,
+              ...data,
+              outstandingDebt: debt,
+              balance: debt,
+              updatedAt: now,
+            };
+          }
+          return c;
+        });
+        ApiService.cacheCustomers(user.id, updated);
+        return updated;
+      });
+
+      // Cloud PostgreSQL update
+      if (isSupabaseConfigured()) {
+        try {
+          await CustomerService.updateCustomer(user.id, id, data);
+        } catch (err) {
+          console.error('Failed to update customer in cloud:', err);
+          throw err;
+        }
+      } else {
+        await ApiService.updateCustomer('', user.id, id, data);
+      }
+    },
+    [user]
+  );
+
+  const deleteCustomer = useCallback(
+    async (id: string): Promise<void> => {
+      if (!user) return;
+
+      // Optimistic update
+      setCustomers((prev) => {
+        const updated = prev.filter((c) => c.id !== id);
+        ApiService.cacheCustomers(user.id, updated);
+        return updated;
+      });
+
+      // Cloud PostgreSQL deletion
+      if (isSupabaseConfigured()) {
+        try {
+          await CustomerService.deleteCustomer(user.id, id);
+        } catch (err) {
+          console.error('Failed to delete customer in cloud:', err);
+          throw err;
+        }
+      } else {
+        await ApiService.deleteCustomer('', user.id, id);
+      }
+    },
+    [user]
+  );
+
+  const addCustomerHistoryNote = useCallback(
+    async (customerId: string, noteContent: string): Promise<void> => {
+      if (!user) return;
+      const now = new Date().toISOString();
+      const historyItem = {
+        id: `hist-${Date.now()}`,
+        content: noteContent.trim(),
+        createdAt: now,
+      };
+
+      const targetCustomer = customers.find((c) => c.id === customerId);
+      if (!targetCustomer) return;
+
+      const newHistory = [historyItem, ...(targetCustomer.history || [])];
+
+      await updateCustomer(customerId, {
+        history: newHistory,
+      });
+    },
+    [user, customers, updateCustomer]
+  );
+
+  // ============================================================================
+  // NOTE CRUD
+  // ============================================================================
+  const addNote = useCallback(
+    async (data: Omit<GeneralNote, 'id' | 'createdAt' | 'updatedAt'>): Promise<GeneralNote> => {
+      if (!user) throw new Error('User must be authenticated');
+      const now = new Date().toISOString();
+      const newNote: GeneralNote = {
+        ...data,
+        id: generateUUID(),
+        userId: user.id,
+        createdAt: now,
+        updatedAt: now,
+      };
+
+      setNotes((prev) => {
+        const updated = [newNote, ...prev.filter((n) => n.id !== newNote.id)];
+        ApiService.cacheNotes(user.id, updated);
+        return updated;
+      });
+
+      if (isSupabaseConfigured()) {
+        try {
+          const saved = await CustomerService.createNote(user.id, data);
+          setNotes((prev) => {
+            const updated = prev.map((n) => (n.id === newNote.id ? saved : n));
+            ApiService.cacheNotes(user.id, updated);
+            return updated;
+          });
+          return saved;
+        } catch (err) {
+          console.error('Failed to save note to cloud:', err);
+          throw err;
+        }
+      } else {
+        await ApiService.createNote('', user.id, newNote);
+      }
+
+      return newNote;
+    },
+    [user]
+  );
+
+  const updateNote = useCallback(
+    async (id: string, data: Partial<GeneralNote>): Promise<void> => {
+      if (!user) return;
+      const now = new Date().toISOString();
+
+      setNotes((prev) => {
+        const updated = prev.map((n) => (n.id === id ? { ...n, ...data, updatedAt: now } : n));
+        ApiService.cacheNotes(user.id, updated);
+        return updated;
+      });
+
+      if (isSupabaseConfigured()) {
+        await CustomerService.updateNote(user.id, id, data);
+      } else {
+        await ApiService.updateNote('', user.id, id, data);
+      }
+    },
+    [user]
+  );
+
+  const deleteNote = useCallback(
+    async (id: string): Promise<void> => {
+      if (!user) return;
+
+      setNotes((prev) => {
+        const updated = prev.filter((n) => n.id !== id);
+        ApiService.cacheNotes(user.id, updated);
+        return updated;
+      });
+
+      if (isSupabaseConfigured()) {
+        await CustomerService.deleteNote(user.id, id);
+      } else {
+        await ApiService.deleteNote('', user.id, id);
+      }
+    },
+    [user]
+  );
+
+  const togglePinNote = useCallback(
+    async (id: string): Promise<void> => {
+      const target = notes.find((n) => n.id === id);
+      if (target) {
+        await updateNote(id, { isPinned: !target.isPinned });
+      }
+    },
+    [notes, updateNote]
+  );
+
+  // ============================================================================
+  // DATA MIGRATION TO CLOUD
+  // ============================================================================
+  const migrateLocalDataToCloud = useCallback(async () => {
+    if (!user) {
+      return { success: false, customersMigrated: 0, notesMigrated: 0, error: 'User is not authenticated' };
+    }
+    if (!isSupabaseConfigured()) {
+      return { success: false, customersMigrated: 0, notesMigrated: 0, error: 'Supabase is not configured' };
+    }
+
+    try {
+      const localCustomers = ApiService.getCachedCustomers(user.id);
+      const localNotes = ApiService.getCachedNotes(user.id);
+
+      const result = await CustomerService.migrateLegacyDataToCloud(
+        user.id,
+        localCustomers.length > 0 ? localCustomers : customers,
+        localNotes.length > 0 ? localNotes : notes
+      );
+
+      await refreshData();
+      return {
+        success: true,
+        customersMigrated: result.customersMigrated,
+        notesMigrated: result.notesMigrated,
+      };
+    } catch (err: any) {
+      return {
+        success: false,
+        customersMigrated: 0,
+        notesMigrated: 0,
+        error: err.message || 'Migration failed',
+      };
+    }
+  }, [user, customers, notes, refreshData]);
+
+  // Import / Export
+  const exportJson = useCallback(() => {
+    StorageService.exportToJson();
+  }, []);
+
+  const exportCsv = useCallback(() => {
+    StorageService.exportCustomersToCsv(customers);
+  }, [customers]);
+
+  const importJson = useCallback(
+    async (file: File) => {
+      const result = await StorageService.importFromJson(file);
+      if (result.success && user) {
+        const importedCustomers = StorageService.getCustomers().map((c) => ({
+          ...c,
+          userId: user.id,
+          id: generateUUID(),
+        }));
+        const importedNotes = StorageService.getNotes().map((n) => ({
+          ...n,
+          userId: user.id,
+          id: generateUUID(),
+        }));
+
+        setCustomers(importedCustomers);
+        setNotes(importedNotes);
+
+        if (isSupabaseConfigured()) {
+          CustomerService.migrateLegacyDataToCloud(user.id, importedCustomers, importedNotes).catch(console.warn);
+        }
+      }
+      return result;
+    },
+    [user]
+  );
+
+  const resetToSample = useCallback(async () => {
+    if (!user) return;
+    const seedCustomers: Customer[] = INITIAL_CUSTOMERS.map((c) => {
+      const rawDebt = Number((c as any).outstandingDebt ?? c.balance ?? 0);
+      return {
+        ...c,
+        id: generateUUID(),
+        userId: user.id,
+        customerName: c.name,
+        name: c.name,
+        outstandingDebt: rawDebt,
+        balance: rawDebt,
+      };
+    });
+
+    const seedNotes: GeneralNote[] = INITIAL_NOTES.map((n) => ({
+      ...n,
+      id: generateUUID(),
+      userId: user.id,
+    }));
+
+    setCustomers(seedCustomers);
+    setNotes(seedNotes);
+    ApiService.cacheCustomers(user.id, seedCustomers);
+    ApiService.cacheNotes(user.id, seedNotes);
+
+    if (isSupabaseConfigured()) {
+      CustomerService.migrateLegacyDataToCloud(user.id, seedCustomers, seedNotes).catch(console.warn);
+    }
+  }, [user]);
+
+  const clearAll = useCallback(async () => {
+    if (!user) return;
+    if (isSupabaseConfigured()) {
+      for (const c of customers) {
+        CustomerService.deleteCustomer(user.id, c.id).catch(console.warn);
+      }
+      for (const n of notes) {
+        CustomerService.deleteNote(user.id, n.id).catch(console.warn);
+      }
+    }
+    setCustomers([]);
+    setNotes([]);
+    ApiService.cacheCustomers(user.id, []);
+    ApiService.cacheNotes(user.id, []);
+  }, [user, customers, notes]);
+
+  // Filter & Sort Setters
   const setSearchQuery = useCallback((query: string) => {
     setFilterOptions((prev) => ({ ...prev, searchQuery: query }));
   }, []);
@@ -276,307 +637,34 @@ export const CustomerProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     setFilterOptions(defaultFilterOptions);
   }, []);
 
-  // Customer CRUD
-  const addCustomer = useCallback(
-    (data: Omit<Customer, 'id' | 'createdAt' | 'updatedAt'>): Customer => {
-      const now = new Date().toISOString();
-      const currentUserId = user?.id || 'guest';
-      const newCustomer: Customer = {
-        ...data,
-        id: `cust-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-        userId: currentUserId,
-        history: data.history || [],
-        createdAt: now,
-        updatedAt: now,
-      };
-
-      const updated = [newCustomer, ...customers];
-      setCustomers(updated);
-
-      if (user && token) {
-        ApiService.cacheCustomers(user.id, updated);
-        ApiService.createCustomer(token, user.id, newCustomer).catch((err) => {
-          console.warn('Async cloud customer save notice:', err);
-        });
-      } else {
-        StorageService.saveCustomers(updated);
-      }
-
-      return newCustomer;
-    },
-    [customers, user, token]
-  );
-
-  const updateCustomer = useCallback(
-    (id: string, data: Partial<Customer>) => {
-      const now = new Date().toISOString();
-      const updated = customers.map((c) =>
-        c.id === id ? { ...c, ...data, updatedAt: now } : c
-      );
-      setCustomers(updated);
-
-      if (user && token) {
-        ApiService.cacheCustomers(user.id, updated);
-        ApiService.updateCustomer(token, user.id, id, data).catch((err) => {
-          console.warn('Async cloud customer update notice:', err);
-        });
-      } else {
-        StorageService.saveCustomers(updated);
-      }
-    },
-    [customers, user, token]
-  );
-
-  const deleteCustomer = useCallback(
-    (id: string) => {
-      const updated = customers.filter((c) => c.id !== id);
-      setCustomers(updated);
-
-      if (user && token) {
-        ApiService.cacheCustomers(user.id, updated);
-        ApiService.deleteCustomer(token, user.id, id).catch((err) => {
-          console.warn('Async cloud customer delete notice:', err);
-        });
-      } else {
-        StorageService.saveCustomers(updated);
-      }
-    },
-    [customers, user, token]
-  );
-
-  const addCustomerHistoryNote = useCallback(
-    (customerId: string, noteContent: string) => {
-      const now = new Date().toISOString();
-      const historyItem = {
-        id: `hist-${Date.now()}`,
-        content: noteContent.trim(),
-        createdAt: now,
-      };
-
-      const updated = customers.map((c) => {
-        if (c.id === customerId) {
-          const newHistory = [historyItem, ...(c.history || [])];
-          const updatedCust = { ...c, history: newHistory, updatedAt: now };
-
-          if (user && token) {
-            ApiService.updateCustomer(token, user.id, customerId, { history: newHistory });
-          }
-
-          return updatedCust;
-        }
-        return c;
-      });
-
-      setCustomers(updated);
-      if (user) {
-        ApiService.cacheCustomers(user.id, updated);
-      } else {
-        StorageService.saveCustomers(updated);
-      }
-    },
-    [customers, user, token]
-  );
-
-  // Note CRUD
-  const addNote = useCallback(
-    (data: Omit<GeneralNote, 'id' | 'createdAt' | 'updatedAt'>): GeneralNote => {
-      const now = new Date().toISOString();
-      const currentUserId = user?.id || 'guest';
-      const newNote: GeneralNote = {
-        ...data,
-        id: `note-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-        userId: currentUserId,
-        createdAt: now,
-        updatedAt: now,
-      };
-
-      const updated = [newNote, ...notes];
-      setNotes(updated);
-
-      if (user && token) {
-        ApiService.cacheNotes(user.id, updated);
-        ApiService.createNote(token, user.id, newNote).catch((err) => {
-          console.warn('Async cloud note save notice:', err);
-        });
-      } else {
-        StorageService.saveNotes(updated);
-      }
-
-      return newNote;
-    },
-    [notes, user, token]
-  );
-
-  const updateNote = useCallback(
-    (id: string, data: Partial<GeneralNote>) => {
-      const now = new Date().toISOString();
-      const updated = notes.map((n) =>
-        n.id === id ? { ...n, ...data, updatedAt: now } : n
-      );
-      setNotes(updated);
-
-      if (user && token) {
-        ApiService.cacheNotes(user.id, updated);
-        ApiService.updateNote(token, user.id, id, data).catch((err) => {
-          console.warn('Async cloud note update notice:', err);
-        });
-      } else {
-        StorageService.saveNotes(updated);
-      }
-    },
-    [notes, user, token]
-  );
-
-  const deleteNote = useCallback(
-    (id: string) => {
-      const updated = notes.filter((n) => n.id !== id);
-      setNotes(updated);
-
-      if (user && token) {
-        ApiService.cacheNotes(user.id, updated);
-        ApiService.deleteNote(token, user.id, id).catch((err) => {
-          console.warn('Async cloud note delete notice:', err);
-        });
-      } else {
-        StorageService.saveNotes(updated);
-      }
-    },
-    [notes, user, token]
-  );
-
-  const togglePinNote = useCallback(
-    (id: string) => {
-      const now = new Date().toISOString();
-      let targetPinned = false;
-      const updated = notes.map((n) => {
-        if (n.id === id) {
-          targetPinned = !n.isPinned;
-          return { ...n, isPinned: targetPinned, updatedAt: now };
-        }
-        return n;
-      });
-      setNotes(updated);
-
-      if (user && token) {
-        ApiService.cacheNotes(user.id, updated);
-        ApiService.updateNote(token, user.id, id, { isPinned: targetPinned }).catch((err) => {
-          console.warn('Async cloud note pin notice:', err);
-        });
-      } else {
-        StorageService.saveNotes(updated);
-      }
-    },
-    [notes, user, token]
-  );
-
-  // Import / Export
-  const exportJson = useCallback(() => {
-    StorageService.exportToJson();
-  }, []);
-
-  const exportCsv = useCallback(() => {
-    StorageService.exportCustomersToCsv(customers);
-  }, [customers]);
-
-  const importJson = useCallback(
-    async (file: File) => {
-      const result = await StorageService.importFromJson(file);
-      if (result.success && user) {
-        const importedCustomers = StorageService.getCustomers().map((c) => ({
-          ...c,
-          userId: user.id,
-        }));
-        const importedNotes = StorageService.getNotes().map((n) => ({
-          ...n,
-          userId: user.id,
-        }));
-
-        setCustomers(importedCustomers);
-        setNotes(importedNotes);
-
-        if (token) {
-          importedCustomers.forEach((c) => ApiService.createCustomer(token, user.id, c));
-          importedNotes.forEach((n) => ApiService.createNote(token, user.id, n));
-        }
-      }
-      return result;
-    },
-    [user, token]
-  );
-
-  const resetToSample = useCallback(() => {
-    if (user) {
-      const seedCustomers = INITIAL_CUSTOMERS.map((c) => ({
-        ...c,
-        id: `cust-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-        userId: user.id,
-      }));
-      const seedNotes = INITIAL_NOTES.map((n) => ({
-        ...n,
-        id: `note-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-        userId: user.id,
-      }));
-
-      setCustomers(seedCustomers);
-      setNotes(seedNotes);
-      ApiService.cacheCustomers(user.id, seedCustomers);
-      ApiService.cacheNotes(user.id, seedNotes);
-
-      if (token) {
-        seedCustomers.forEach((c) => ApiService.createCustomer(token, user.id, c));
-        seedNotes.forEach((n) => ApiService.createNote(token, user.id, n));
-      }
-    }
-  }, [user, token]);
-
-  const clearAll = useCallback(() => {
-    if (user) {
-      customers.forEach((c) => {
-        if (token) ApiService.deleteCustomer(token, user.id, c.id);
-      });
-      notes.forEach((n) => {
-        if (token) ApiService.deleteNote(token, user.id, n.id);
-      });
-      ApiService.cacheCustomers(user.id, []);
-      ApiService.cacheNotes(user.id, []);
-    }
-    setCustomers([]);
-    setNotes([]);
-  }, [user, token, customers, notes]);
-
   // Filtered and Sorted Customers
   const filteredCustomers = useMemo(() => {
     return customers
       .filter((c) => {
-        // Search query
         if (filterOptions.searchQuery.trim()) {
           const q = filterOptions.searchQuery.toLowerCase().trim();
-          const matchName = c.name?.toLowerCase().includes(q);
+          const matchName = (c.customerName || c.name)?.toLowerCase().includes(q);
           const matchPhone = c.phone?.toLowerCase().includes(q);
           const matchAddress = c.address?.toLowerCase().includes(q);
-          const matchNote = c.note?.toLowerCase().includes(q);
+          const matchNote = (c.notes || c.note)?.toLowerCase().includes(q);
           const matchTelegram = c.telegram?.toLowerCase().includes(q);
           if (!matchName && !matchPhone && !matchAddress && !matchNote && !matchTelegram) {
             return false;
           }
         }
 
-        // Status filter
         if (filterOptions.status !== 'all' && c.status !== filterOptions.status) {
           return false;
         }
 
-        // Category filter
-        if (filterOptions.category !== 'all' && c.category !== filterOptions.category) {
+        if (filterOptions.category !== 'all' && (c.productCategory || c.category) !== filterOptions.category) {
           return false;
         }
 
-        // Province filter
         if (filterOptions.province !== 'all' && c.province !== filterOptions.province) {
           return false;
         }
 
-        // Village filter
         if (
           filterOptions.village &&
           filterOptions.village !== 'all' &&
@@ -590,10 +678,12 @@ export const CustomerProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       .sort((a, b) => {
         const orderMod = filterOptions.sortOrder === 'asc' ? 1 : -1;
         if (filterOptions.sortBy === 'name') {
-          return a.name.localeCompare(b.name, 'km') * orderMod;
+          return (a.customerName || a.name).localeCompare((b.customerName || b.name), 'km') * orderMod;
         }
-        if (filterOptions.sortBy === 'balance') {
-          return ((a.balance || 0) - (b.balance || 0)) * orderMod;
+        if (filterOptions.sortBy === 'balance' || filterOptions.sortBy === 'outstandingDebt') {
+          const balA = a.outstandingDebt ?? a.balance ?? 0;
+          const balB = b.outstandingDebt ?? b.balance ?? 0;
+          return (balA - balB) * orderMod;
         }
         if (filterOptions.sortBy === 'status') {
           return a.status.localeCompare(b.status) * orderMod;
@@ -601,12 +691,11 @@ export const CustomerProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         if (filterOptions.sortBy === 'updatedAt') {
           return (new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime()) * orderMod;
         }
-        // default 'date'
         return (new Date(a.date).getTime() - new Date(b.date).getTime()) * orderMod;
       });
   }, [customers, filterOptions]);
 
-  // Calculated Stats
+  // Stats
   const stats = useMemo<CustomerStats>(() => {
     const today = new Date().toISOString().split('T')[0];
     const todayNotesCount =
@@ -615,10 +704,10 @@ export const CustomerProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
     const activeCount = customers.filter((c) => c.status === 'active').length;
     const pendingCount = customers.filter((c) => c.status === 'pending').length;
-    const debtCount = customers.filter((c) => c.status === 'debt').length;
+    const debtCount = customers.filter((c) => c.status === 'debt' || (c.outstandingDebt && c.outstandingDebt > 0)).length;
     const completedCount = customers.filter((c) => c.status === 'completed').length;
     const inactiveCount = customers.filter((c) => c.status === 'inactive').length;
-    const totalBal = customers.reduce((acc, c) => acc + (c.balance || 0), 0);
+    const totalBal = customers.reduce((acc, c) => acc + (c.outstandingDebt ?? c.balance ?? 0), 0);
 
     const sortedByCreated = [...customers].sort(
       (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
@@ -673,6 +762,7 @@ export const CustomerProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         resetToSample,
         clearAll,
         refreshData,
+        migrateLocalDataToCloud,
       }}
     >
       {children}

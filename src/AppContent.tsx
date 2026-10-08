@@ -157,32 +157,38 @@ export const AppContent: React.FC = () => {
     setCustomerToView(customer);
   };
 
-  const handleCustomerSubmit = (
+  const handleCustomerSubmit = async (
     data: Omit<Customer, 'id' | 'createdAt' | 'updatedAt'>
   ) => {
     setIsSubmitting(true);
     try {
       if (customerToEdit) {
-        updateCustomer(customerToEdit.id, data);
+        await updateCustomer(customerToEdit.id, data);
         showToast(t.toasts.customerUpdated, 'success');
       } else {
-        addCustomer(data);
+        await addCustomer(data);
         showToast(t.toasts.customerAdded, 'success');
       }
       setIsCustomerFormModalOpen(false);
       setCustomerToEdit(null);
+    } catch (err: any) {
+      showToast(`កំហុសក្នុងការរក្សាទុក: ${err.message || 'បរាជ័យ'}`, 'error');
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const handleConfirmDeleteCustomer = () => {
+  const handleConfirmDeleteCustomer = async () => {
     if (customerToDelete) {
-      deleteCustomer(customerToDelete.id);
-      showToast(t.toasts.customerDeleted, 'info');
-      setCustomerToDelete(null);
-      if (customerToView?.id === customerToDelete.id) {
-        setCustomerToView(null);
+      try {
+        await deleteCustomer(customerToDelete.id);
+        showToast(t.toasts.customerDeleted, 'info');
+        setCustomerToDelete(null);
+        if (customerToView?.id === customerToDelete.id) {
+          setCustomerToView(null);
+        }
+      } catch (err: any) {
+        showToast(`កំហុសក្នុងការលុប: ${err.message || 'បរាជ័យ'}`, 'error');
       }
     }
   };

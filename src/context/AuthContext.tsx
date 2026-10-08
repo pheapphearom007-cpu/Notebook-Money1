@@ -1,11 +1,12 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { User, AuthContextType, LoginPayload, RegisterPayload } from '../types/auth';
 import { ApiService } from '../services/api';
+import { getSupabaseClient, isSupabaseConfigured } from '../lib/supabase';
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  // Restore user session synchronously from storage so reloading never flashes/kicks back to login
+  // Restore initial user session synchronously from storage to prevent layout flashes
   const [user, setUser] = useState<User | null>(() => {
     const saved = ApiService.getSavedSession();
     return saved?.user || null;
@@ -16,15 +17,86 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   });
   const [isLoading, setIsLoading] = useState<boolean>(() => {
     const saved = ApiService.getSavedSession();
-    return !saved; // If saved session exists, immediately render authenticated UI
+    return !saved;
   });
   const [error, setError] = useState<string | null>(null);
   const [syncStatus, setSyncStatus] = useState<'synced' | 'syncing' | 'offline' | 'error'>('synced');
+  const [isPasswordRecovery, setIsPasswordRecovery] = useState<boolean>(false);
 
-  // Initialize and verify authentication on application load
+  // Initialize and verify authentication on application mount
   useEffect(() => {
     let isMounted = true;
 
+    // 1. If Supabase is configured, set up auth state change listener
+    if (isSupabaseConfigured()) {
+      const supabase = getSupabaseClient()!;
+
+      // Check current session from Supabase
+      supabase.auth.getSession().then(({ data: { session }, error: sessionErr }) => {
+        if (!isMounted) return;
+        if (sessionErr) {
+          console.warn('Supabase getSession error:', sessionErr);
+        }
+
+        if (session && session.user) {
+          const authUser: User = {
+            id: session.user.id,
+            name: session.user.user_metadata?.name || session.user.email?.split('@')[0] || 'User',
+            email: session.user.email || '',
+            createdAt: session.user.created_at || new Date().toISOString(),
+          };
+          setUser(authUser);
+          setToken(session.access_token);
+          ApiService.saveSession({ user: authUser, token: session.access_token });
+          setSyncStatus('synced');
+        } else {
+          // If no active Supabase session, clear state
+          setUser(null);
+          setToken(null);
+          ApiService.clearSession();
+        }
+        setIsLoading(false);
+      });
+
+      // Listen to Supabase Auth events (login, logout, token refresh, password recovery)
+      const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+        if (!isMounted) return;
+
+        if (event === 'PASSWORD_RECOVERY') {
+          setIsPasswordRecovery(true);
+        }
+
+        if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') {
+          if (session?.user) {
+            const authUser: User = {
+              id: session.user.id,
+              name: session.user.user_metadata?.name || session.user.email?.split('@')[0] || 'User',
+              email: session.user.email || '',
+              createdAt: session.user.created_at || new Date().toISOString(),
+            };
+            setUser(authUser);
+            setToken(session.access_token);
+            ApiService.saveSession({ user: authUser, token: session.access_token });
+            setSyncStatus('synced');
+          }
+          setIsLoading(false);
+        } else if (event === 'SIGNED_OUT') {
+          setUser(null);
+          setToken(null);
+          setIsPasswordRecovery(false);
+          ApiService.clearSession();
+          setSyncStatus('synced');
+          setIsLoading(false);
+        }
+      });
+
+      return () => {
+        isMounted = false;
+        subscription.unsubscribe();
+      };
+    }
+
+    // 2. Fallback session restoration if Supabase is not yet configured (e.g. offline vault)
     const restoreSession = async () => {
       try {
         const saved = ApiService.getSavedSession();
@@ -37,7 +109,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           return;
         }
 
-        // Verify token with backend
         const verifiedUser = await ApiService.getCurrentUser(saved.token);
         if (isMounted) {
           if (verifiedUser) {
@@ -45,12 +116,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             setToken(saved.token);
             setSyncStatus('synced');
           } else if (saved.user) {
-            // Keep local/vault user session active so reloading never kicks the user out
             setUser(saved.user);
             setToken(saved.token);
             setSyncStatus('offline');
           } else {
-            // No valid local user available
             ApiService.clearSession();
             setUser(null);
             setToken(null);
@@ -58,9 +127,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           setIsLoading(false);
         }
       } catch (err) {
-        console.warn('Authentication restoration notice:', err);
+        console.warn('Session restoration notice:', err);
         if (isMounted) {
-          // If network failed but user was previously saved, allow offline access with cached token
           const saved = ApiService.getSavedSession();
           if (saved?.user) {
             setUser(saved.user);
@@ -82,9 +150,56 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   }, []);
 
+  // 1. LOGIN
   const login = useCallback(async ({ email, password }: LoginPayload): Promise<{ success: boolean; error?: string }> => {
     setError(null);
     setSyncStatus('syncing');
+
+    if (isSupabaseConfigured()) {
+      const supabase = getSupabaseClient()!;
+      try {
+        const { data, error: supaErr } = await supabase.auth.signInWithPassword({
+          email: email.trim(),
+          password,
+        });
+
+        if (supaErr) {
+          const msg = supaErr.message === 'Invalid login credentials'
+            ? 'អ៊ីមែល ឬពាក្យសម្ងាត់មិនត្រឹមត្រូវឡើយ (Invalid email or password)'
+            : supaErr.message;
+          setError(msg);
+          setSyncStatus('error');
+          return { success: false, error: msg };
+        }
+
+        if (!data.user || !data.session) {
+          const msg = 'បរាជ័យក្នុងការចូលប្រើប្រាស់។ សូមព្យាយាមម្តងទៀត។';
+          setError(msg);
+          setSyncStatus('error');
+          return { success: false, error: msg };
+        }
+
+        const sessionUser: User = {
+          id: data.user.id,
+          name: data.user.user_metadata?.name || data.user.email?.split('@')[0] || 'User',
+          email: data.user.email || email,
+          createdAt: data.user.created_at || new Date().toISOString(),
+        };
+
+        setUser(sessionUser);
+        setToken(data.session.access_token);
+        ApiService.saveSession({ user: sessionUser, token: data.session.access_token });
+        setSyncStatus('synced');
+        return { success: true };
+      } catch (err: any) {
+        const msg = err.message || 'Login failed. Please check your credentials.';
+        setError(msg);
+        setSyncStatus('error');
+        return { success: false, error: msg };
+      }
+    }
+
+    // Fallback login
     try {
       const session = await ApiService.login(email, password);
       setUser(session.user);
@@ -99,9 +214,57 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, []);
 
+  // 2. REGISTER
   const register = useCallback(async ({ name, email, password }: RegisterPayload): Promise<{ success: boolean; error?: string }> => {
     setError(null);
     setSyncStatus('syncing');
+
+    if (isSupabaseConfigured()) {
+      const supabase = getSupabaseClient()!;
+      try {
+        const { data, error: supaErr } = await supabase.auth.signUp({
+          email: email.trim(),
+          password,
+          options: {
+            data: { name: name.trim() },
+          },
+        });
+
+        if (supaErr) {
+          setError(supaErr.message);
+          setSyncStatus('error');
+          return { success: false, error: supaErr.message };
+        }
+
+        if (!data.user) {
+          const msg = 'Registration failed. Please try again.';
+          setError(msg);
+          setSyncStatus('error');
+          return { success: false, error: msg };
+        }
+
+        const sessionUser: User = {
+          id: data.user.id,
+          name: name.trim(),
+          email: data.user.email || email,
+          createdAt: data.user.created_at || new Date().toISOString(),
+        };
+
+        const authToken = data.session?.access_token || `supa_${Date.now()}`;
+        setUser(sessionUser);
+        setToken(authToken);
+        ApiService.saveSession({ user: sessionUser, token: authToken });
+        setSyncStatus('synced');
+        return { success: true };
+      } catch (err: any) {
+        const msg = err.message || 'Registration failed. Please try again.';
+        setError(msg);
+        setSyncStatus('error');
+        return { success: false, error: msg };
+      }
+    }
+
+    // Fallback register
     try {
       const session = await ApiService.register(name, email, password);
       setUser(session.user);
@@ -116,16 +279,89 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, []);
 
+  // 3. LOGOUT
   const logout = useCallback(async (): Promise<void> => {
     try {
-      await ApiService.logout(token || undefined);
+      if (isSupabaseConfigured()) {
+        const supabase = getSupabaseClient()!;
+        await supabase.auth.signOut();
+      } else {
+        await ApiService.logout(token || undefined);
+      }
+    } catch (e) {
+      console.warn('Logout notice:', e);
     } finally {
       setUser(null);
       setToken(null);
       setError(null);
+      setIsPasswordRecovery(false);
+      ApiService.clearSession();
       setSyncStatus('synced');
     }
   }, [token]);
+
+  // 4. PASSWORD RESET (Request reset email)
+  const resetPasswordForEmail = useCallback(async (email: string): Promise<{ success: boolean; error?: string }> => {
+    setError(null);
+    if (!isSupabaseConfigured()) {
+      return {
+        success: false,
+        error: 'Supabase Cloud មិនទាន់ត្រូវបានកំណត់រចនាសម្ព័ន្ធទេ។ សូមភ្ជាប់ Supabase នៅក្នុង Settings ដើម្បីប្រើប្រាស់មុខងារនេះ។',
+      };
+    }
+
+    const supabase = getSupabaseClient()!;
+    try {
+      const redirectUrl = typeof window !== 'undefined'
+        ? `${window.location.origin}${window.location.pathname}`
+        : undefined;
+
+      const { error: supaErr } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+        redirectTo: redirectUrl,
+      });
+
+      if (supaErr) {
+        setError(supaErr.message);
+        return { success: false, error: supaErr.message };
+      }
+
+      return { success: true };
+    } catch (err: any) {
+      const msg = err.message || 'Failed to send password reset email';
+      setError(msg);
+      return { success: false, error: msg };
+    }
+  }, []);
+
+  // 5. UPDATE PASSWORD (Save new password during recovery or user profile)
+  const updatePassword = useCallback(async (newPassword: string): Promise<{ success: boolean; error?: string }> => {
+    setError(null);
+    if (!isSupabaseConfigured()) {
+      return {
+        success: false,
+        error: 'Supabase Cloud is not configured',
+      };
+    }
+
+    const supabase = getSupabaseClient()!;
+    try {
+      const { error: supaErr } = await supabase.auth.updateUser({
+        password: newPassword,
+      });
+
+      if (supaErr) {
+        setError(supaErr.message);
+        return { success: false, error: supaErr.message };
+      }
+
+      setIsPasswordRecovery(false);
+      return { success: true };
+    } catch (err: any) {
+      const msg = err.message || 'Failed to update password';
+      setError(msg);
+      return { success: false, error: msg };
+    }
+  }, []);
 
   const clearError = useCallback(() => {
     setError(null);
@@ -142,6 +378,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         login,
         register,
         logout,
+        resetPasswordForEmail,
+        updatePassword,
+        isPasswordRecovery,
+        setIsPasswordRecovery,
         clearError,
         syncStatus,
       }}

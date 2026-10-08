@@ -749,21 +749,34 @@ export const ApiService = {
 
   // Map Supabase rows to Customer interface
   mapSupabaseCustomer(row: any): Customer {
+    const rawDebt = row.outstanding_debt !== null && row.outstanding_debt !== undefined
+      ? Number(row.outstanding_debt)
+      : (row.balance !== null && row.balance !== undefined ? Number(row.balance) : 0);
+    const cName = row.customer_name || row.name || '';
+    const cCat = row.product_category || row.category || 'general';
+    const cNotes = row.notes || row.note || '';
+
     return {
       id: row.id,
       userId: row.user_id,
-      name: row.name,
-      phone: row.phone,
+      customerName: cName,
+      name: cName,
+      phone: row.phone || '',
       address: row.address || '',
       province: row.province || '',
       date: row.date,
-      note: row.note || '',
+      notes: cNotes,
+      note: cNotes,
       status: row.status,
-      category: row.category,
+      productCategory: cCat,
+      category: cCat,
+      amount: row.amount !== null && row.amount !== undefined ? Number(row.amount) : 0,
+      priceOfGoods: row.price_of_goods !== null && row.price_of_goods !== undefined ? Number(row.price_of_goods) : 0,
+      outstandingDebt: rawDebt,
       priority: row.priority,
       email: row.email,
       telegram: row.telegram,
-      balance: row.balance !== null ? Number(row.balance) : 0,
+      balance: rawDebt,
       currency: row.currency || 'USD',
       history: row.history || [],
       createdAt: row.created_at,
