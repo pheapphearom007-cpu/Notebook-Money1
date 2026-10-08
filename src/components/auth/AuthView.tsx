@@ -77,7 +77,25 @@ export const AuthView: React.FC = () => {
       return Object.keys(errs).length === 0;
     }
 
-    // Forgot Password Mode Validation
+    // 1. Password Recovery Mode Validation
+    if (isPasswordRecovery) {
+      if (!password) {
+        errs.password = t.auth.validation.passwordRequired;
+      } else if (password.length < 6) {
+        errs.password = t.auth.validation.passwordLength;
+      }
+
+      if (!confirmPassword) {
+        errs.confirmPassword = t.auth.validation.passwordRequired;
+      } else if (password !== confirmPassword) {
+        errs.confirmPassword = t.auth.validation.passwordMismatch;
+      }
+
+      setFieldErrors(errs);
+      return Object.keys(errs).length === 0;
+    }
+
+    // 2. Forgot Password Mode Validation
     if (mode === 'forgot') {
       if (!email.trim()) {
         errs.email = t.auth.validation.emailRequired;
@@ -88,7 +106,7 @@ export const AuthView: React.FC = () => {
       return Object.keys(errs).length === 0;
     }
 
-    // Sign Up Validation
+    // 3. Sign Up Validation
     if (mode === 'signup') {
       if (!name.trim()) {
         errs.name = t.auth.validation.nameRequired;
@@ -133,7 +151,12 @@ export const AuthView: React.FC = () => {
       if (isPasswordRecovery) {
         const res = await updatePassword(password);
         if (res.success) {
-          setResetSuccessMessage(t.auth.passwordResetSuccess);
+          setResetSuccessMessage(t.auth.passwordResetSuccess || 'ពាក្យសម្ងាត់ត្រូវបានផ្លាស់ប្តូរដោយជោគជ័យ! សូមចូលប្រើប្រាស់។');
+          setPassword('');
+          setConfirmPassword('');
+          setTimeout(() => {
+            switchMode('signin');
+          }, 2000);
         }
       } else if (mode === 'forgot') {
         const res = await resetPasswordForEmail(email.trim());

@@ -22,10 +22,38 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [error, setError] = useState<string | null>(null);
   const [syncStatus, setSyncStatus] = useState<'synced' | 'syncing' | 'offline' | 'error'>('synced');
   const [isPasswordRecovery, setIsPasswordRecovery] = useState<boolean>(false);
+  const [recoveryToken, setRecoveryToken] = useState<string | null>(null);
 
   // Initialize and verify authentication on application mount
   useEffect(() => {
     let isMounted = true;
+
+    // Check for password reset token in URL parameters or hash
+    if (typeof window !== 'undefined') {
+      const urlParams = new URLSearchParams(window.location.search);
+      let queryToken = urlParams.get('token');
+      if (!queryToken && window.location.hash) {
+        const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+        queryToken = hashParams.get('token');
+      }
+
+      if (queryToken) {
+        const tokenToVerify = queryToken.trim();
+        ApiService.verifyResetToken(tokenToVerify).then((res) => {
+          if (!isMounted) return;
+          if (res.valid) {
+            setRecoveryToken(tokenToVerify);
+            setIsPasswordRecovery(true);
+            try {
+              const cleanUrl = window.location.pathname + window.location.hash.replace(/[?&]token=[^&]+/, '');
+              window.history.replaceState({}, document.title, cleanUrl || '/');
+            } catch {}
+          } else {
+            setError(res.error || 'តំណរភ្ជាប់កំណត់ពាក្យសម្ងាត់មិនត្រឹមត្រូវ ឬផុតកំណត់ហើយ (Invalid or expired reset token)');
+          }
+        });
+      }
+    }
 
     // 1. If Supabase is configured, set up auth state change listener
     if (isSupabaseConfigured()) {
@@ -303,29 +331,35 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // 4. PASSWORD RESET (Request reset email)
   const resetPasswordForEmail = useCallback(async (email: string): Promise<{ success: boolean; error?: string }> => {
     setError(null);
-    if (!isSupabaseConfigured()) {
-      return {
-        success: false,
-        error: 'Supabase Cloud មិនទាន់ត្រូវបានកំណត់រចនាសម្ព័ន្ធទេ។ សូមភ្ជាប់ Supabase នៅក្នុង Settings ដើម្បីប្រើប្រាស់មុខងារនេះ។',
-      };
+
+    if (isSupabaseConfigured()) {
+      const supabase = getSupabaseClient()!;
+      try {
+        const redirectUrl = typeof window !== 'undefined'
+          ? `${window.location.origin}${window.location.pathname}`
+          : undefined;
+
+        const { error: supaErr } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+          redirectTo: redirectUrl,
+        });
+
+        if (supaErr) {
+          setError(supaErr.message);
+          return { success: false, error: supaErr.message };
+        }
+
+        return { success: true };
+      } catch (err: any) {
+        const msg = err.message || 'Failed to send password reset email';
+        setError(msg);
+        return { success: false, error: msg };
+      }
     }
 
-    const supabase = getSupabaseClient()!;
+    // Central Server API password reset request
     try {
-      const redirectUrl = typeof window !== 'undefined'
-        ? `${window.location.origin}${window.location.pathname}`
-        : undefined;
-
-      const { error: supaErr } = await supabase.auth.resetPasswordForEmail(email.trim(), {
-        redirectTo: redirectUrl,
-      });
-
-      if (supaErr) {
-        setError(supaErr.message);
-        return { success: false, error: supaErr.message };
-      }
-
-      return { success: true };
+      const res = await ApiService.requestPasswordReset(email.trim());
+      return { success: res.success };
     } catch (err: any) {
       const msg = err.message || 'Failed to send password reset email';
       setError(msg);
@@ -336,32 +370,47 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // 5. UPDATE PASSWORD (Save new password during recovery or user profile)
   const updatePassword = useCallback(async (newPassword: string): Promise<{ success: boolean; error?: string }> => {
     setError(null);
-    if (!isSupabaseConfigured()) {
-      return {
-        success: false,
-        error: 'Supabase Cloud is not configured',
-      };
-    }
 
-    const supabase = getSupabaseClient()!;
-    try {
-      const { error: supaErr } = await supabase.auth.updateUser({
-        password: newPassword,
-      });
-
-      if (supaErr) {
-        setError(supaErr.message);
-        return { success: false, error: supaErr.message };
+    // If active recovery token from central server
+    if (recoveryToken) {
+      try {
+        const res = await ApiService.resetPassword(recoveryToken, newPassword);
+        setRecoveryToken(null);
+        setIsPasswordRecovery(false);
+        return { success: res.success };
+      } catch (err: any) {
+        const msg = err.message || 'Failed to reset password';
+        setError(msg);
+        return { success: false, error: msg };
       }
-
-      setIsPasswordRecovery(false);
-      return { success: true };
-    } catch (err: any) {
-      const msg = err.message || 'Failed to update password';
-      setError(msg);
-      return { success: false, error: msg };
     }
-  }, []);
+
+    if (isSupabaseConfigured()) {
+      const supabase = getSupabaseClient()!;
+      try {
+        const { error: supaErr } = await supabase.auth.updateUser({
+          password: newPassword,
+        });
+
+        if (supaErr) {
+          setError(supaErr.message);
+          return { success: false, error: supaErr.message };
+        }
+
+        setIsPasswordRecovery(false);
+        return { success: true };
+      } catch (err: any) {
+        const msg = err.message || 'Failed to update password';
+        setError(msg);
+        return { success: false, error: msg };
+      }
+    }
+
+    return {
+      success: false,
+      error: 'Cannot update password: No active recovery session or server connection found.',
+    };
+  }, [recoveryToken]);
 
   const clearError = useCallback(() => {
     setError(null);

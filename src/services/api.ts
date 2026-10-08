@@ -74,14 +74,16 @@ export const ApiService = {
 
   // 1. REGISTER
   async register(name: string, email: string, password: string): Promise<AuthSession> {
+    const normalizedEmail = email.trim().toLowerCase();
+
     // Check Supabase first if configured
     if (isSupabaseConfigured()) {
       const supabase = getSupabaseClient()!;
       const { data, error } = await supabase.auth.signUp({
-        email,
+        email: normalizedEmail,
         password,
         options: {
-          data: { name },
+          data: { name: name.trim() },
         },
       });
 
@@ -95,7 +97,7 @@ export const ApiService = {
       const sessionUser: User = {
         id: data.user.id,
         name: name.trim(),
-        email: data.user.email || email,
+        email: data.user.email || normalizedEmail,
         createdAt: data.user.created_at || new Date().toISOString(),
       };
       const token = data.session?.access_token || `supa_${Date.now()}`;
@@ -104,12 +106,12 @@ export const ApiService = {
       return session;
     }
 
-    // Central Server API
+    // Central Server API (PostgreSQL / Central Database)
     try {
       const res = await fetch(`${getApiBase()}/auth/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, email, password }),
+        body: JSON.stringify({ name: name.trim(), email: normalizedEmail, password }),
       });
 
       const parsed = await safeParseJson(res);
@@ -124,32 +126,30 @@ export const ApiService = {
           token: parsed.data.token,
         };
         this.saveSession(session);
+
+        // Remove from legacy local vault if it existed
+        this.clearLegacyUser(normalizedEmail);
+
         return session;
       }
 
-      // Static hosting / non-API fallback
-      return this.clientFallbackRegister(name, email, password);
+      throw new Error('Registration failed. Server returned an invalid response.');
     } catch (err: any) {
-      if (err.message && (
-        err.message.includes('already exists') ||
-        err.message.includes('already in use') ||
-        err.message.includes('Password') ||
-        err.message.includes('password') ||
-        err.message.includes('Invalid') ||
-        err.message.includes('required')
-      )) {
-        throw err;
+      if (err.name === 'TypeError' || err.message?.includes('fetch') || err.message?.includes('network')) {
+        throw new Error('Cannot connect to authentication server. Please verify your connection or server status.');
       }
-      return this.clientFallbackRegister(name, email, password);
+      throw err;
     }
   },
 
   // 2. LOGIN
   async login(email: string, password: string): Promise<AuthSession> {
+    const normalizedEmail = email.trim().toLowerCase();
+
     if (isSupabaseConfigured()) {
       const supabase = getSupabaseClient()!;
       const { data, error } = await supabase.auth.signInWithPassword({
-        email,
+        email: normalizedEmail,
         password,
       });
 
@@ -163,7 +163,7 @@ export const ApiService = {
       const sessionUser: User = {
         id: data.user.id,
         name: data.user.user_metadata?.name || data.user.email?.split('@')[0] || 'User',
-        email: data.user.email || email,
+        email: data.user.email || normalizedEmail,
         createdAt: data.user.created_at || new Date().toISOString(),
       };
 
@@ -179,14 +179,10 @@ export const ApiService = {
       const res = await fetch(`${getApiBase()}/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ email: normalizedEmail, password }),
       });
 
       const parsed = await safeParseJson(res);
-
-      if (parsed.isJson && !parsed.ok && parsed.data?.error) {
-        throw new Error(parsed.data.error);
-      }
 
       if (parsed.isJson && parsed.ok && parsed.data?.user) {
         const session: AuthSession = {
@@ -194,20 +190,133 @@ export const ApiService = {
           token: parsed.data.token,
         };
         this.saveSession(session);
+        this.clearLegacyUser(normalizedEmail);
         return session;
       }
 
-      return this.clientFallbackLogin(email, password);
-    } catch (err: any) {
-      if (err.message && (
-        err.message.includes('credentials') ||
-        err.message.includes('Invalid') ||
-        err.message.includes('password')
-      )) {
-        throw err;
+      // If user was created in legacy local vault on Device A, auto-promote to central server
+      const legacyUser = this.findLegacyUser(normalizedEmail, password);
+      if (legacyUser) {
+        try {
+          console.log(`[AUTH] Auto-migrating legacy device-local account for ${normalizedEmail} to central database...`);
+          return await this.register(legacyUser.name || 'User', normalizedEmail, password);
+        } catch {
+          // If promotion fails, proceed to report error
+        }
       }
-      return this.clientFallbackLogin(email, password);
+
+      if (parsed.isJson && !parsed.ok && parsed.data?.error) {
+        throw new Error(parsed.data.error);
+      }
+
+      throw new Error('Invalid email or password.');
+    } catch (err: any) {
+      if (err.name === 'TypeError' || err.message?.includes('fetch') || err.message?.includes('network')) {
+        throw new Error('Cannot connect to authentication server. Please verify your connection or server status.');
+      }
+      throw err;
     }
+  },
+
+  // Helper to find legacy user in local storage for auto-promotion
+  findLegacyUser(email: string, password: string): { name: string; email: string } | null {
+    if (typeof window === 'undefined') return null;
+    try {
+      const usersStr = localStorage.getItem('sievphov_vault_users');
+      if (!usersStr) return null;
+      const users = JSON.parse(usersStr);
+      const match = users.find((u: any) => u.email?.toLowerCase() === email.toLowerCase() && u.password === password);
+      return match ? { name: match.name, email: match.email } : null;
+    } catch {
+      return null;
+    }
+  },
+
+  clearLegacyUser(email: string): void {
+    if (typeof window === 'undefined') return;
+    try {
+      const usersStr = localStorage.getItem('sievphov_vault_users');
+      if (!usersStr) return;
+      const users = JSON.parse(usersStr);
+      const filtered = users.filter((u: any) => u.email?.toLowerCase() !== email.toLowerCase());
+      localStorage.setItem('sievphov_vault_users', JSON.stringify(filtered));
+    } catch {}
+  },
+
+  // PASSWORD RESET APIS
+  async requestPasswordReset(email: string): Promise<{ success: boolean; message: string; devResetUrl?: string }> {
+    const normalizedEmail = email.trim().toLowerCase();
+
+    if (isSupabaseConfigured()) {
+      const supabase = getSupabaseClient()!;
+      const redirectUrl = typeof window !== 'undefined'
+        ? `${window.location.origin}${window.location.pathname}`
+        : undefined;
+      const { error } = await supabase.auth.resetPasswordForEmail(normalizedEmail, {
+        redirectTo: redirectUrl,
+      });
+      if (error) throw new Error(error.message);
+      return { success: true, message: 'Password reset link sent.' };
+    }
+
+    const res = await fetch(`${getApiBase()}/auth/forgot-password`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: normalizedEmail }),
+    });
+
+    const parsed = await safeParseJson(res);
+    if (parsed.isJson && parsed.ok) {
+      return {
+        success: true,
+        message: parsed.data?.message || 'Password reset link sent.',
+        devResetUrl: parsed.data?.devResetUrl,
+      };
+    }
+
+    if (parsed.isJson && parsed.data?.error) {
+      throw new Error(parsed.data.error);
+    }
+
+    throw new Error('Failed to request password reset. Please try again.');
+  },
+
+  async verifyResetToken(token: string): Promise<{ valid: boolean; email?: string; error?: string }> {
+    const res = await fetch(`${getApiBase()}/auth/verify-reset-token?token=${encodeURIComponent(token)}`, {
+      method: 'GET',
+    });
+
+    const parsed = await safeParseJson(res);
+    if (parsed.isJson && parsed.ok && parsed.data?.valid) {
+      return { valid: true, email: parsed.data?.email };
+    }
+
+    return {
+      valid: false,
+      error: parsed.data?.error || 'Invalid or expired password reset token.',
+    };
+  },
+
+  async resetPassword(token: string, newPassword: string): Promise<{ success: boolean; message: string }> {
+    const res = await fetch(`${getApiBase()}/auth/reset-password`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: token.trim(), newPassword }),
+    });
+
+    const parsed = await safeParseJson(res);
+    if (parsed.isJson && parsed.ok) {
+      return {
+        success: true,
+        message: parsed.data?.message || 'Password reset successfully.',
+      };
+    }
+
+    if (parsed.isJson && parsed.data?.error) {
+      throw new Error(parsed.data.error);
+    }
+
+    throw new Error('Failed to reset password. Token may be invalid or expired.');
   },
 
   // 3. GET CURRENT USER (Verify Session)

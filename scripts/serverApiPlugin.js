@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import { fileURLToPath } from 'url';
+import nodemailer from 'nodemailer';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -29,6 +30,7 @@ function initDb() {
     const initialData = {
       users: [demoUser],
       sessions: [],
+      resetTokens: [],
       customers: [
         {
           id: 'cust-cloud-1',
@@ -99,9 +101,16 @@ function initDb() {
 function readDb() {
   initDb();
   try {
-    return JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
+    const data = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
+    return {
+      users: data.users || [],
+      sessions: data.sessions || [],
+      resetTokens: data.resetTokens || [],
+      customers: data.customers || [],
+      notes: data.notes || [],
+    };
   } catch {
-    return { users: [], sessions: [], customers: [], notes: [] };
+    return { users: [], sessions: [], resetTokens: [], customers: [], notes: [] };
   }
 }
 
@@ -115,6 +124,102 @@ function writeDb(data) {
 
 function hashPassword(password, salt) {
   return crypto.pbkdf2Sync(password, salt, 1000, 64, 'sha256').toString('hex');
+}
+
+function verifyPassword(password, salt, storedHash) {
+  if (!password || !salt || !storedHash) return false;
+  const hash = hashPassword(password, salt);
+  if (hash.length !== storedHash.length) return false;
+  return crypto.timingSafeEqual(Buffer.from(hash, 'hex'), Buffer.from(storedHash, 'hex'));
+}
+
+let mailTransporter = null;
+
+function getMailTransporter() {
+  if (mailTransporter) return mailTransporter;
+  const host = process.env.SMTP_HOST;
+  const port = parseInt(process.env.SMTP_PORT || '587', 10);
+  const user = process.env.SMTP_USER;
+  const pass = process.env.SMTP_PASS;
+
+  if (host && user && pass) {
+    try {
+      mailTransporter = nodemailer.createTransport({
+        host,
+        port,
+        secure: port === 465,
+        auth: { user, pass },
+      });
+      return mailTransporter;
+    } catch (e) {
+      console.error('Failed to initialize nodemailer transport', e);
+      return null;
+    }
+  }
+  return null;
+}
+
+function getAppBaseUrl(req) {
+  if (process.env.APP_URL) {
+    return process.env.APP_URL.replace(/\/+$/, '');
+  }
+  const origin = req.headers['origin'] || req.headers['referer'];
+  if (origin) {
+    try {
+      const u = new URL(origin);
+      return `${u.protocol}//${u.host}`;
+    } catch {}
+  }
+  const host = req.headers['host'];
+  const proto = req.headers['x-forwarded-proto'] || (req.connection && req.connection.encrypted ? 'https' : 'http');
+  if (host) {
+    return `${proto}://${host}`;
+  }
+  return 'http://localhost:3000';
+}
+
+async function sendResetEmail(email, resetLink) {
+  const transporter = getMailTransporter();
+  const from = process.env.SMTP_FROM || '"សៀវភៅបញ្ជី (Sievphov Banchy)" <no-reply@sievphov.com>';
+  const subject = 'កំណត់ពាក្យសម្ងាត់ឡើងវិញ - Sievphov Banchy Password Reset';
+  const html = `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #e7e0d4; border-radius: 12px; background-color: #fffcf8; color: #1c1917;">
+      <h2 style="color: #1f3d5c; margin-top: 0;">សៀវភៅបញ្ជី (Sievphov Banchy)</h2>
+      <p style="font-size: 15px; line-height: 1.6;">យើងបានទទួលសំណើសុំកំណត់ពាក្យសម្ងាត់ឡើងវិញសម្រាប់គណនីរបស់អ្នក (${email})។</p>
+      <p style="font-size: 15px; line-height: 1.6;">សូមចុចលើប៊ូតុងខាងក្រោមដើម្បីកំណត់ពាក្យសម្ងាត់ថ្មី (តំណរភ្ជាប់នេះមានសុពលភាពរយៈពេល 1 ម៉ោង):</p>
+      <div style="text-align: center; margin: 28px 0;">
+        <a href="${resetLink}" style="background-color: #1f3d5c; color: #ffffff; padding: 12px 28px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">កំណត់ពាក្យសម្ងាត់ថ្មី (Reset Password)</a>
+      </div>
+      <p style="font-size: 13px; color: #57534e; line-height: 1.5;">ប្រសិនបើអ្នកមិនបានស្នើសុំកំណត់ពាក្យសម្ងាត់នេះទេ សូមរំលងសារនេះ។ គណនីរបស់អ្នកនៅតែមានសុវត្ថិភាព។</p>
+      <hr style="border: none; border-top: 1px solid #e7e0d4; margin: 24px 0;" />
+      <p style="font-size: 12px; color: #857f77;">តំណរភ្ជាប់ផ្ទាល់៖ <a href="${resetLink}" style="color: #1f3d5c;">${resetLink}</a></p>
+    </div>
+  `;
+
+  if (transporter) {
+    try {
+      await transporter.sendMail({
+        from,
+        to: email,
+        subject,
+        html,
+        text: `សូមចុចលើតំណរភ្ជាប់នេះដើម្បីកំណត់ពាក្យសម្ងាត់ថ្មី: ${resetLink}`,
+      });
+      console.log(`✓ Password reset email dispatched to ${email} via SMTP.`);
+      return { sent: true };
+    } catch (err) {
+      console.error(`✗ SMTP dispatch failed for ${email}:`, err.message);
+      console.log(`[AUTH FALLBACK LINK] Reset link for ${email}: ${resetLink}`);
+      return { sent: false, error: err.message };
+    }
+  } else {
+    console.log(`\n======================================================`);
+    console.log(`[AUTH] Password Reset Requested for: ${email}`);
+    console.log(`[AUTH] Reset Link: ${resetLink}`);
+    console.log(`[AUTH] Configure SMTP_HOST, SMTP_USER, SMTP_PASS in .env for production emails.`);
+    console.log(`======================================================\n`);
+    return { sent: false, logged: true };
+  }
 }
 
 function parseJsonBody(req) {
@@ -238,8 +343,7 @@ export async function handleCloudApi(req, res) {
             return sendJson(res, 401, { error: 'Invalid email or password.' });
           }
 
-          const expectedHash = hashPassword(password, user.salt);
-          if (expectedHash !== user.passwordHash) {
+          if (!verifyPassword(password, user.salt, user.passwordHash)) {
             return sendJson(res, 401, { error: 'Invalid email or password.' });
           }
 
@@ -276,6 +380,135 @@ export async function handleCloudApi(req, res) {
             writeDb(db);
           }
           return sendJson(res, 200, { success: true });
+        }
+
+        // 4a. POST /api/auth/forgot-password
+        if (pathname === '/api/auth/forgot-password' && req.method === 'POST') {
+          const body = await parseJsonBody(req);
+          const { email } = body;
+
+          if (!email?.trim()) {
+            return sendJson(res, 400, { error: 'Email address is required.' });
+          }
+
+          const normalizedEmail = email.trim().toLowerCase();
+          const user = (db.users || []).find((u) => u.email.toLowerCase() === normalizedEmail);
+
+          let devResetUrl = undefined;
+          if (user) {
+            // Invalidate any previous unused tokens for this user
+            db.resetTokens = (db.resetTokens || []).map((t) =>
+              t.userId === user.id && !t.used ? { ...t, used: true } : t
+            );
+
+            const token = crypto.randomBytes(32).toString('hex');
+            const expiresAt = Date.now() + 1000 * 60 * 60; // 1 hour expiration
+            const resetRecord = {
+              token,
+              userId: user.id,
+              email: user.email,
+              expiresAt,
+              used: false,
+              createdAt: new Date().toISOString(),
+            };
+            db.resetTokens.push(resetRecord);
+            writeDb(db);
+
+            const baseUrl = getAppBaseUrl(req);
+            const resetLink = `${baseUrl}/?token=${token}`;
+            devResetUrl = resetLink;
+
+            await sendResetEmail(user.email, resetLink);
+          } else {
+            // Subtle timing mitigation to prevent user enumeration
+            await new Promise((r) => setTimeout(r, 200));
+          }
+
+          return sendJson(res, 200, {
+            success: true,
+            message: 'If an account matches that email address, a password reset link has been sent.',
+            ...(process.env.NODE_ENV !== 'production' && devResetUrl ? { devResetUrl } : {}),
+          });
+        }
+
+        // 4b. GET /api/auth/verify-reset-token
+        if (pathname === '/api/auth/verify-reset-token' && req.method === 'GET') {
+          const urlObj = new URL(req.url, 'http://localhost');
+          const token = (urlObj.searchParams.get('token') || '').trim();
+
+          if (!token) {
+            return sendJson(res, 400, { valid: false, error: 'Token is required.' });
+          }
+
+          const record = (db.resetTokens || []).find((t) => t.token === token);
+          if (!record) {
+            return sendJson(res, 400, { valid: false, error: 'Invalid password reset token.' });
+          }
+
+          if (record.used) {
+            return sendJson(res, 400, { valid: false, error: 'This password reset link has already been used.' });
+          }
+
+          if (Date.now() > record.expiresAt) {
+            return sendJson(res, 400, { valid: false, error: 'This password reset link has expired.' });
+          }
+
+          return sendJson(res, 200, { valid: true, email: record.email });
+        }
+
+        // 4c. POST /api/auth/reset-password
+        if (pathname === '/api/auth/reset-password' && req.method === 'POST') {
+          const body = await parseJsonBody(req);
+          const { token, newPassword } = body;
+
+          if (!token || !newPassword) {
+            return sendJson(res, 400, { error: 'Token and new password are required.' });
+          }
+
+          if (newPassword.length < 6) {
+            return sendJson(res, 400, { error: 'Password must be at least 6 characters.' });
+          }
+
+          const record = (db.resetTokens || []).find((t) => t.token === token.trim());
+          if (!record) {
+            return sendJson(res, 400, { error: 'Invalid password reset token.' });
+          }
+
+          if (record.used) {
+            return sendJson(res, 400, { error: 'This password reset link has already been used.' });
+          }
+
+          if (Date.now() > record.expiresAt) {
+            return sendJson(res, 400, { error: 'This password reset link has expired. Please request a new one.' });
+          }
+
+          const userIndex = (db.users || []).findIndex((u) => u.id === record.userId);
+          if (userIndex === -1) {
+            return sendJson(res, 404, { error: 'User account not found.' });
+          }
+
+          // Update password with fresh salt
+          const newSalt = crypto.randomBytes(16).toString('hex');
+          const newHash = hashPassword(newPassword, newSalt);
+
+          db.users[userIndex].salt = newSalt;
+          db.users[userIndex].passwordHash = newHash;
+          db.users[userIndex].updatedAt = new Date().toISOString();
+
+          // Mark token as used
+          record.used = true;
+
+          // Invalidate all existing sessions for this user across all devices!
+          db.sessions = (db.sessions || []).filter((s) => s.userId !== record.userId);
+
+          writeDb(db);
+
+          console.log(`✓ Password updated for user ${db.users[userIndex].email}. All old sessions invalidated.`);
+
+          return sendJson(res, 200, {
+            success: true,
+            message: 'Password has been reset successfully. Please log in with your new password.',
+          });
         }
 
         // ==========================================
@@ -484,6 +717,16 @@ export function cloudApiPlugin() {
   return {
     name: 'cloud-api-plugin',
     configureServer(server) {
+      initDb();
+      server.middlewares.use(async (req, res, next) => {
+        const url = req.url || '';
+        if (req.method !== 'OPTIONS' && !url.startsWith('/api/')) {
+          return next();
+        }
+        await handleCloudApi(req, res);
+      });
+    },
+    configurePreviewServer(server) {
       initDb();
       server.middlewares.use(async (req, res, next) => {
         const url = req.url || '';
