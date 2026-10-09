@@ -1,17 +1,19 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
-// Environment variable and local override configuration
+// Centrally managed environment variables (Vite build & runtime)
 const getCredentials = () => {
-  const envUrl = import.meta.env.VITE_SUPABASE_URL;
-  const envKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-  const localUrl = typeof window !== 'undefined' ? localStorage.getItem('sievphov_supabase_url') : null;
-  const localKey = typeof window !== 'undefined' ? localStorage.getItem('sievphov_supabase_key') : null;
-
-  const url = (localUrl || envUrl || '').trim();
-  const key = (localKey || envKey || '').trim();
-
+  const url = (import.meta.env.VITE_SUPABASE_URL || '').trim();
+  const key = (import.meta.env.VITE_SUPABASE_ANON_KEY || '').trim();
   return { url, key };
 };
+
+// Clean up any legacy localStorage entries from older versions
+if (typeof window !== 'undefined') {
+  try {
+    localStorage.removeItem('sievphov_supabase_url');
+    localStorage.removeItem('sievphov_supabase_key');
+  } catch {}
+}
 
 // Security check: Verify that service_role key is NEVER used on client
 const isServiceRoleKey = (key: string): boolean => {
@@ -36,12 +38,20 @@ export const isSupabaseConfigured = (): boolean => {
     url &&
     key &&
     (url.startsWith('https://') || url.startsWith('http://')) &&
+    !url.includes('your-project') &&
+    !key.includes('your-anon-public-key') &&
     !isServiceRoleKey(key)
   );
 };
 
 export const getSupabaseClient = (): SupabaseClient | null => {
   if (!isSupabaseConfigured()) {
+    if (import.meta.env.DEV) {
+      console.warn(
+        '[Supabase Developer Notice] VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY is not configured in .env. ' +
+        'Please define them in your environment variables for automatic cloud authentication.'
+      );
+    }
     return null;
   }
 
@@ -67,34 +77,6 @@ export const getSupabaseClient = (): SupabaseClient | null => {
     });
   }
   return clientInstance;
-};
-
-export const configureSupabaseCredentials = (url: string, key: string): void => {
-  if (typeof window !== 'undefined') {
-    const cleanUrl = url.trim();
-    const cleanKey = key.trim();
-
-    if (isServiceRoleKey(cleanKey)) {
-      throw new Error('SECURITY VIOLATION: Cannot configure service_role key in frontend. Use anon public key only.');
-    }
-
-    if (cleanUrl && cleanKey) {
-      localStorage.setItem('sievphov_supabase_url', cleanUrl);
-      localStorage.setItem('sievphov_supabase_key', cleanKey);
-    } else {
-      localStorage.removeItem('sievphov_supabase_url');
-      localStorage.removeItem('sievphov_supabase_key');
-    }
-    clientInstance = null; // Invalidate current client instance to re-initialize
-  }
-};
-
-export const clearSupabaseCredentials = (): void => {
-  if (typeof window !== 'undefined') {
-    localStorage.removeItem('sievphov_supabase_url');
-    localStorage.removeItem('sievphov_supabase_key');
-    clientInstance = null;
-  }
 };
 
 // Convenient accessor for the Supabase instance

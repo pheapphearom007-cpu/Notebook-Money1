@@ -20,7 +20,6 @@ import {
   Server,
   Smartphone,
   Laptop,
-  Key,
 } from 'lucide-react';
 import { Button } from '../common/Button';
 import { ConfirmDialog } from '../common/ConfirmDialog';
@@ -31,7 +30,7 @@ import { useCustomers } from '../../context/CustomerContext';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import { StorageService } from '../../services/storage';
-import { isSupabaseConfigured, configureSupabaseCredentials } from '../../services/supabaseClient';
+import { isSupabaseConfigured } from '../../lib/supabase';
 
 export const SettingsView: React.FC = () => {
   const { language, setLanguage, t } = useLanguage();
@@ -57,15 +56,6 @@ export const SettingsView: React.FC = () => {
   const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [isMigrating, setIsMigrating] = useState(false);
-
-  // Supabase Custom Config State
-  const [isSupabaseFormOpen, setIsSupabaseFormOpen] = useState(false);
-  const [supabaseUrlInput, setSupabaseUrlInput] = useState(() =>
-    typeof window !== 'undefined' ? localStorage.getItem('sievphov_supabase_url') || '' : ''
-  );
-  const [supabaseKeyInput, setSupabaseKeyInput] = useState(() =>
-    typeof window !== 'undefined' ? localStorage.getItem('sievphov_supabase_key') || '' : ''
-  );
 
   const isSupabaseActive = isSupabaseConfigured();
 
@@ -127,28 +117,6 @@ export const SettingsView: React.FC = () => {
     } finally {
       setIsSyncing(false);
     }
-  };
-
-  const handleSaveSupabase = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!supabaseUrlInput.trim() || !supabaseKeyInput.trim()) {
-      showToast('សូមបញ្ចូល Supabase Project URL និង Anon Key ឱ្យបានត្រឹមត្រូវ', 'error');
-      return;
-    }
-
-    configureSupabaseCredentials(supabaseUrlInput.trim(), supabaseKeyInput.trim());
-    showToast('បានរក្សាទុកការកំណត់ Supabase Cloud! កំពុងផ្ទុកទិន្នន័យ...', 'success');
-    setIsSupabaseFormOpen(false);
-    await refreshData();
-  };
-
-  const handleDisconnectSupabase = async () => {
-    configureSupabaseCredentials('', '');
-    setSupabaseUrlInput('');
-    setSupabaseKeyInput('');
-    showToast('បានផ្តាច់ពី Supabase។ ត្រឡប់មកប្រើ Server API ផ្ទាល់ខ្លួន', 'info');
-    setIsSupabaseFormOpen(false);
-    await refreshData();
   };
 
   return (
@@ -375,65 +343,33 @@ export const SettingsView: React.FC = () => {
               </div>
             </div>
 
-            {/* Supabase Custom Credentials Form Accordion */}
+            {/* Supabase Automatic Cloud Architecture Status */}
             <div className="mt-4 pt-3 border-t border-border">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold text-muted-foreground font-khmer">
-                  {isSupabaseActive ? 'កំណត់រចនាសម្ព័ន្ធ Supabase ដោយផ្ទាល់' : 'តភ្ជាប់ទៅ Supabase ផ្ទាល់ខ្លួន (ស្រេចចិត្ត)'}
+              <div className="flex items-center justify-between p-3 rounded-xl bg-muted/30 border border-border">
+                <div className="flex items-center gap-2.5">
+                  <span className={`w-2.5 h-2.5 rounded-full ${isSupabaseActive ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
+                  <div>
+                    <p className="text-xs font-semibold text-foreground font-khmer">
+                      {isSupabaseActive
+                        ? 'Supabase Cloud Database (PostgreSQL + RLS សកម្ម)'
+                        : 'Server API Fallback Mode'}
+                    </p>
+                    <p className="text-[11px] text-muted-foreground font-khmer">
+                      {isSupabaseActive
+                        ? 'កំណត់ស្វ័យប្រវត្តិតាមរយៈ Server Environment Variables ដោយសុវត្ថិភាព'
+                        : 'ទិន្នន័យរក្សាទុកនៅលើ Server API និង Local Vault ដោយសុវត្ថិភាព'}
+                    </p>
+                  </div>
+                </div>
+                <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-md ${
+                  isSupabaseActive
+                    ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20'
+                    : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20'
+                }`}>
+                  {isSupabaseActive ? 'Auto Connected' : 'Local Mode'}
                 </span>
-                <button
-                  type="button"
-                  onClick={() => setIsSupabaseFormOpen(!isSupabaseFormOpen)}
-                  className="text-xs text-primary underline font-khmer cursor-pointer"
-                >
-                  {isSupabaseFormOpen ? 'បិទ' : (isSupabaseActive ? 'មើលការកំណត់' : 'ភ្ជាប់ Supabase')}
-                </button>
               </div>
-
-              {isSupabaseFormOpen && (
-                <form onSubmit={handleSaveSupabase} className="mt-3 p-4 rounded-xl bg-muted/40 border border-border space-y-3">
-                  <div>
-                    <label className="block text-xs font-medium text-foreground mb-1">
-                      Supabase Project URL
-                    </label>
-                    <input
-                      type="url"
-                      value={supabaseUrlInput}
-                      onChange={(e) => setSupabaseUrlInput(e.target.value)}
-                      placeholder="https://your-project-ref.supabase.co"
-                      className="w-full px-3 py-2 text-xs rounded-lg border border-border bg-background text-foreground focus:border-primary focus:ring-1 focus:ring-primary/20 outline-none"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-medium text-foreground mb-1">
-                      Supabase Anon Public API Key
-                    </label>
-                    <input
-                      type="password"
-                      value={supabaseKeyInput}
-                      onChange={(e) => setSupabaseKeyInput(e.target.value)}
-                      placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-                      className="w-full px-3 py-2 text-xs rounded-lg border border-border bg-background text-foreground focus:border-primary focus:ring-1 focus:ring-primary/20 outline-none"
-                    />
-                  </div>
-
-                  <p className="text-[11px] text-muted-foreground font-khmer">
-                    * ចំណាំ៖ កូដ SQL សម្រាប់បង្កើតតារាង និង RLS មានស្រាប់ក្នុងឯកសារ <code className="font-mono text-[10px] bg-secondary px-1 py-0.5 rounded">supabase_schema.sql</code>។
-                  </p>
-
-                  <div className="flex items-center gap-2 pt-1">
-                    <Button type="submit" size="sm" variant="primary" leftIcon={<Key className="w-3.5 h-3.5" />}>
-                      រក្សាទុក & តភ្ជាប់
-                    </Button>
-                    {isSupabaseActive && (
-                      <Button type="button" size="sm" variant="outline" onClick={handleDisconnectSupabase}>
-                        ផ្តាច់ Supabase
-                      </Button>
-                    )}
-                  </div>
-                </form>
-              )}
+            </div>
 
               {/* Data Migration Option (Section 16) */}
               <div className="mt-4 pt-4 border-t border-border flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-muted/30 p-3.5 rounded-xl">
@@ -459,7 +395,6 @@ export const SettingsView: React.FC = () => {
             </div>
           </div>
         </div>
-      </div>
 
       {/* 4. Data Persistence & Backup Section */}
       <div className="bg-card rounded-2xl border border-border p-5 sm:p-6 shadow-xs space-y-5">
