@@ -288,6 +288,13 @@ export const kmTranslations: Translations = {
     migrateDataDesc: 'បញ្ចូលកំណត់ត្រាអតិថិជនពីឧបករណ៍នេះចូលទៅក្នុង Cloud Database នៃគណនីរបស់អ្នក',
     migrating: 'កំពុងផ្ទេរទិន្នន័យ...',
     migrateSuccess: 'បានផ្ទេរទិន្នន័យទៅ Cloud Database ដោយជោគជ័យ!',
+    emailConfirmationSent: 'ការចុះឈ្មោះបានជោគជ័យ! សូមពិនិត្យមើលអ៊ីមែលរបស់អ្នកដើម្បីបញ្ជាក់គណនី (Email Confirmation) មុនពេលចូលប្រើប្រាស់។',
+    registrationUnavailable: 'សេវាចុះឈ្មោះកណ្តាលមិនទាន់អាចដំណើរការបានទេនៅពេលនេះ។ សូមភ្ជាប់ជាមួយ Supabase Cloud ឬព្យាយាមម្តងទៀតនៅពេលក្រោយ។',
+    rateLimitExceeded: 'អ្នកបានព្យាយាមច្រើនដងពេក សូមរង់ចាំមួយភ្លែតរួចព្យាយាមម្តងទៀត។',
+    connectSupabase: 'កំណត់ Supabase Cloud',
+    supabaseConfigured: 'បានភ្ជាប់ Supabase Cloud រួចរាល់',
+    saveSupabase: 'រក្សាទុកការកំណត់ Supabase',
+    enterSupabaseCredentials: 'សូមបញ្ចូល Supabase Project URL និង Anon Public Key:',
     validation: {
       nameRequired: 'សូមបញ្ចូលឈ្មោះរបស់អ្នក',
       emailRequired: 'សូមបញ្ចូលអ៊ីមែល',

@@ -243,42 +243,72 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   // 2. REGISTER
-  const register = useCallback(async ({ name, email, password }: RegisterPayload): Promise<{ success: boolean; error?: string }> => {
+  const register = useCallback(async ({ name, email, password }: RegisterPayload): Promise<{ success: boolean; error?: string; requiresEmailConfirmation?: boolean }> => {
     setError(null);
     setSyncStatus('syncing');
+
+    const cleanName = name.trim();
+    const cleanEmail = email.trim().toLowerCase();
 
     if (isSupabaseConfigured()) {
       const supabase = getSupabaseClient()!;
       try {
         const { data, error: supaErr } = await supabase.auth.signUp({
-          email: email.trim(),
+          email: cleanEmail,
           password,
           options: {
-            data: { name: name.trim() },
+            data: { name: cleanName },
           },
         });
 
         if (supaErr) {
-          setError(supaErr.message);
+          const raw = supaErr.message.toLowerCase();
+          let userMsg = supaErr.message;
+          if (raw.includes('already registered') || raw.includes('already exists') || raw.includes('user_already_exists')) {
+            userMsg = 'អ៊ីមែលនេះមានចុះឈ្មោះរួចហើយ សូមជ្រើសរើសអ៊ីមែលផ្សេង ឬចូលប្រើប្រាស់ (An account with this email already exists)';
+          } else if (raw.includes('at least 6') || raw.includes('weak_password') || raw.includes('password should')) {
+            userMsg = 'ពាក្យសម្ងាត់ត្រូវមានយ៉ាងតិច ៦ តួអក្សរ (Password must be at least 6 characters)';
+          } else if (raw.includes('rate limit') || raw.includes('over_email_send_rate_limit')) {
+            userMsg = 'អ្នកបានព្យាយាមច្រើនដងពេក សូមរង់ចាំមួយភ្លែតរួចព្យាយាមម្តងទៀត (Rate limit exceeded. Please wait a moment)';
+          } else if (raw.includes('invalid email') || raw.includes('unable to validate email')) {
+            userMsg = 'ទម្រង់អ៊ីមែលមិនត្រឹមត្រូវឡើយ (Invalid email address format)';
+          }
+
+          setError(userMsg);
           setSyncStatus('error');
-          return { success: false, error: supaErr.message };
+          return { success: false, error: userMsg };
+        }
+
+        // Supabase duplicate prevention check with email confirmation
+        if (data.user && Array.isArray(data.user.identities) && data.user.identities.length === 0) {
+          const userMsg = 'អ៊ីមែលនេះមានចុះឈ្មោះរួចហើយ សូមជ្រើសរើសអ៊ីមែលផ្សេង ឬចូលប្រើប្រាស់ (An account with this email already exists)';
+          setError(userMsg);
+          setSyncStatus('error');
+          return { success: false, error: userMsg };
         }
 
         if (!data.user) {
-          const msg = 'Registration failed. Please try again.';
+          const msg = 'ការចុះឈ្មោះមិនបានជោគជ័យ សូមព្យាយាមម្តងទៀត (Registration failed. Please try again)';
           setError(msg);
           setSyncStatus('error');
           return { success: false, error: msg };
         }
 
+        // If email confirmation is required, session will be null
+        if (!data.session) {
+          setSyncStatus('synced');
+          return { success: true, requiresEmailConfirmation: true };
+        }
+
+        // Active session established
         const sessionUser: User = {
           id: data.user.id,
-          name: name.trim(),
-          email: data.user.email || email,
+          name: cleanName || data.user.user_metadata?.name || cleanEmail.split('@')[0],
+          email: data.user.email || cleanEmail,
           createdAt: data.user.created_at || new Date().toISOString(),
         };
 
-        const authToken = data.session?.access_token || `supa_${Date.now()}`;
+        const authToken = data.session.access_token;
         setUser(sessionUser);
         setToken(authToken);
         ApiService.saveSession({ user: sessionUser, token: authToken });
@@ -294,7 +324,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     // Fallback register
     try {
-      const session = await ApiService.register(name, email, password);
+      const session = await ApiService.register(cleanName, cleanEmail, password);
       setUser(session.user);
       setToken(session.token);
       setSyncStatus('synced');

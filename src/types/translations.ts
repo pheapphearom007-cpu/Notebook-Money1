@@ -288,6 +288,13 @@ export interface Translations {
     migrateDataDesc: string;
     migrating: string;
     migrateSuccess: string;
+    emailConfirmationSent: string;
+    registrationUnavailable: string;
+    rateLimitExceeded: string;
+    connectSupabase: string;
+    supabaseConfigured: string;
+    saveSupabase: string;
+    enterSupabaseCredentials: string;
     validation: {
       nameRequired: string;
       emailRequired: string;

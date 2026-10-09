@@ -6,22 +6,65 @@ import { isSupabaseConfigured, getSupabaseClient } from './supabaseClient';
 const TOKEN_KEY = 'sievphov_auth_token_v1';
 const USER_KEY = 'sievphov_auth_user_v1';
 
+export interface SafeResponse<T = any> {
+  ok: boolean;
+  status: number;
+  data: T;
+  isJson: boolean;
+  isHtml: boolean;
+  isEmpty: boolean;
+  error?: string;
+}
+
 // Safely parse JSON from a response, handling empty bodies, 404/405, and HTML fallback
-async function safeParseJson(res: Response): Promise<{ ok: boolean; data: any; isJson: boolean }> {
+async function safeParseJson<T = any>(res: Response): Promise<SafeResponse<T>> {
+  const status = res.status;
   try {
     const text = await res.text();
     if (!text || !text.trim()) {
-      return { ok: res.ok, data: {}, isJson: false };
+      return {
+        ok: false,
+        status,
+        data: {} as T,
+        isJson: false,
+        isHtml: false,
+        isEmpty: true,
+        error: 'Empty response received from server',
+      };
     }
     const trimmed = text.trim();
     // Static servers returning HTML (like index.html rewrite or 404 HTML error page)
     if (trimmed.startsWith('<') || trimmed.startsWith('<!DOCTYPE') || trimmed.startsWith('<!doctype')) {
-      return { ok: false, data: {}, isJson: false };
+      return {
+        ok: false,
+        status,
+        data: {} as T,
+        isJson: false,
+        isHtml: true,
+        isEmpty: false,
+        error: 'HTML page received instead of API response',
+      };
     }
     const data = JSON.parse(trimmed);
-    return { ok: res.ok, data, isJson: true };
-  } catch {
-    return { ok: false, data: {}, isJson: false };
+    return {
+      ok: res.ok,
+      status,
+      data,
+      isJson: true,
+      isHtml: false,
+      isEmpty: false,
+      error: !res.ok && data?.error ? data.error : undefined,
+    };
+  } catch (err: any) {
+    return {
+      ok: false,
+      status,
+      data: {} as T,
+      isJson: false,
+      isHtml: false,
+      isEmpty: false,
+      error: err?.message || 'Failed to parse JSON response',
+    };
   }
 }
 
@@ -40,6 +83,17 @@ const getApiBase = (): string => {
 const getUserScopedStorageKey = (userId: string, key: string) => `sievphov_u_${userId}_${key}`;
 
 export const ApiService = {
+  // Simple non-plaintext hashing for client-side local fallback storage
+  simpleHash(password: string, salt: string): string {
+    let hash = 0;
+    const combined = salt + ':' + password;
+    for (let i = 0; i < combined.length; i++) {
+      hash = (hash << 5) - hash + combined.charCodeAt(i);
+      hash |= 0;
+    }
+    return Math.abs(hash).toString(16);
+  },
+
   // Save active session token
   saveSession(session: AuthSession): void {
     if (typeof window === 'undefined') return;
@@ -96,7 +150,7 @@ export const ApiService = {
 
       const sessionUser: User = {
         id: data.user.id,
-        name: name.trim(),
+        name: name.trim() || data.user.user_metadata?.name || normalizedEmail.split('@')[0],
         email: data.user.email || normalizedEmail,
         createdAt: data.user.created_at || new Date().toISOString(),
       };
@@ -116,10 +170,6 @@ export const ApiService = {
 
       const parsed = await safeParseJson(res);
 
-      if (parsed.isJson && !parsed.ok && parsed.data?.error) {
-        throw new Error(parsed.data.error);
-      }
-
       if (parsed.isJson && parsed.ok && parsed.data?.user) {
         const session: AuthSession = {
           user: parsed.data.user,
@@ -133,7 +183,18 @@ export const ApiService = {
         return session;
       }
 
-      throw new Error('Registration failed. Server returned an invalid response.');
+      if (parsed.isJson && parsed.data?.error) {
+        throw new Error(parsed.data.error);
+      }
+
+      // Handle Static Site / missing backend API gracefully
+      if (parsed.isEmpty || parsed.isHtml || parsed.status === 404) {
+        throw new Error(
+          'សេវាចុះឈ្មោះកណ្តាលមិនទាន់ដំណើរការ (Static hosting mode detected - API unavailable). សូមកំណត់ភ្ជាប់ Supabase Cloud ក្នុងប្រព័ន្ធដើម្បីចុះឈ្មោះ។'
+        );
+      }
+
+      throw new Error(parsed.error || 'Registration failed. Server returned an invalid response.');
     } catch (err: any) {
       if (err.name === 'TypeError' || err.message?.includes('fetch') || err.message?.includes('network')) {
         throw new Error('Cannot connect to authentication server. Please verify your connection or server status.');
@@ -207,6 +268,13 @@ export const ApiService = {
 
       if (parsed.isJson && !parsed.ok && parsed.data?.error) {
         throw new Error(parsed.data.error);
+      }
+
+      // Handle Static Site / missing backend API gracefully
+      if (parsed.isEmpty || parsed.isHtml || parsed.status === 404) {
+        throw new Error(
+          'សេវាចូលប្រើប្រាស់កណ្តាលមិនទាន់ដំណើរការ (Static hosting mode detected - API unavailable). សូមកំណត់ភ្ជាប់ Supabase Cloud ក្នុងប្រព័ន្ធដើម្បីចូលប្រើប្រាស់។'
+        );
       }
 
       throw new Error('Invalid email or password.');
@@ -793,11 +861,15 @@ export const ApiService = {
       throw new Error('An account with this email address already exists.');
     }
 
+    const salt = Math.random().toString(36).substring(2, 10);
+    const passwordHash = this.simpleHash(password, salt);
+
     const newUser = {
       id: `user_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
       name: name.trim(),
       email: normalizedEmail,
-      password, // In real backend pbkdf2 is used
+      salt,
+      passwordHash,
       createdAt: new Date().toISOString(),
     };
 
@@ -839,7 +911,13 @@ export const ApiService = {
       return session;
     }
 
-    const user = users.find((u) => u.email.toLowerCase() === normalizedEmail && u.password === password);
+    const user = users.find((u) => {
+      if (u.email?.toLowerCase() !== normalizedEmail) return false;
+      if (u.passwordHash && u.salt) {
+        return u.passwordHash === this.simpleHash(password, u.salt);
+      }
+      return u.password === password;
+    });
     if (!user) {
       throw new Error('Invalid email address or password.');
     }

@@ -29,7 +29,7 @@ export interface AuthContextType {
   isLoading: boolean;
   error: string | null;
   login: (payload: LoginPayload) => Promise<{ success: boolean; error?: string }>;
-  register: (payload: RegisterPayload) => Promise<{ success: boolean; error?: string }>;
+  register: (payload: RegisterPayload) => Promise<{ success: boolean; error?: string; requiresEmailConfirmation?: boolean }>;
   logout: () => Promise<void>;
   resetPasswordForEmail: (email: string) => Promise<{ success: boolean; error?: string }>;
   updatePassword: (newPassword: string) => Promise<{ success: boolean; error?: string }>;

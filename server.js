@@ -21,6 +21,11 @@ const MIME_TYPES = {
 };
 
 const server = http.createServer(async (req, res) => {
+  // Global Security Headers
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+
   const url = req.url || '/';
 
   // Handle API routes & OPTIONS preflight
@@ -28,16 +33,29 @@ const server = http.createServer(async (req, res) => {
     return handleCloudApi(req, res);
   }
 
-  // Handle Static files from dist
-  let sanitizedPath = url.split('?')[0];
-  let filePath = path.join(DIST_DIR, sanitizedPath);
+  // Handle Static files from dist with strict Path Traversal prevention
+  let rawPath;
+  try {
+    rawPath = decodeURIComponent(url.split('?')[0]);
+  } catch {
+    res.statusCode = 400;
+    return res.end('Bad Request');
+  }
+
+  // Normalize path and ensure it remains strictly within DIST_DIR
+  let filePath = path.normalize(path.join(DIST_DIR, rawPath));
+  if (!filePath.startsWith(DIST_DIR)) {
+    res.statusCode = 403;
+    res.setHeader('Content-Type', 'text/plain');
+    return res.end('Access Denied');
+  }
 
   // If path is root or directory
-  if (sanitizedPath === '/' || sanitizedPath === '') {
+  if (rawPath === '/' || rawPath === '') {
     filePath = path.join(DIST_DIR, 'index.html');
   } else if (!fs.existsSync(filePath) || fs.statSync(filePath).isDirectory()) {
     // If request has a file extension (e.g. .png, .ico, .js, .css, .json), do not return index.html
-    const ext = path.extname(sanitizedPath).toLowerCase();
+    const ext = path.extname(rawPath).toLowerCase();
     if (ext && ext !== '.html') {
       res.statusCode = 404;
       res.setHeader('Content-Type', 'text/plain');

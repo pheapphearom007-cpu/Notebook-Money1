@@ -288,6 +288,13 @@ export const enTranslations: Translations = {
     migrateDataDesc: 'Upload local customer records from this device into your authenticated cloud PostgreSQL account',
     migrating: 'Migrating data to cloud...',
     migrateSuccess: 'Successfully migrated records to cloud PostgreSQL!',
+    emailConfirmationSent: 'Registration successful! Please check your email to confirm your account (Email Confirmation) before signing in.',
+    registrationUnavailable: 'Registration service is temporarily unavailable. Please connect your Supabase Cloud project or try again later.',
+    rateLimitExceeded: 'Too many attempts. Please wait a moment and try again.',
+    connectSupabase: 'Configure Supabase Cloud',
+    supabaseConfigured: 'Supabase Cloud Connected',
+    saveSupabase: 'Save Supabase Config',
+    enterSupabaseCredentials: 'Enter your Supabase Project URL and Anon Public Key:',
     validation: {
       nameRequired: 'Please enter your full name',
       emailRequired: 'Please enter your email address',

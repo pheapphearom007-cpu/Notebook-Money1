@@ -26,6 +26,10 @@ dist-ssr/
 .env.test.local
 .env.production.local
 
+# Local and cloud JSON database files
+data/
+data/*.json
+
 # Editor & OS files
 .DS_Store
 Thumbs.db

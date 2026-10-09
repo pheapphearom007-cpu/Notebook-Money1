@@ -13,12 +13,15 @@ import {
   CheckCircle2,
   KeyRound,
   ArrowLeft,
+  Database,
+  X,
 } from 'lucide-react';
 import { AppLogo } from '../common/AppLogo';
 import { useAuth } from '../../context/AuthContext';
 import { useLanguage } from '../../context/LanguageContext';
 import { useTheme } from '../../context/ThemeContext';
 import { Button } from '../common/Button';
+import { isSupabaseConfigured, configureSupabaseCredentials, clearSupabaseCredentials } from '../../lib/supabase';
 
 export const AuthView: React.FC = () => {
   const {
@@ -49,6 +52,50 @@ export const AuthView: React.FC = () => {
 
   // Validation errors
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+
+  // Supabase Cloud Configuration Modal State
+  const [showDbModal, setShowDbModal] = useState(false);
+  const [supaUrl, setSupaUrl] = useState(() =>
+    typeof window !== 'undefined' ? localStorage.getItem('sievphov_supabase_url') || '' : ''
+  );
+  const [supaKey, setSupaKey] = useState(() =>
+    typeof window !== 'undefined' ? localStorage.getItem('sievphov_supabase_key') || '' : ''
+  );
+  const [dbModalError, setDbModalError] = useState<string | null>(null);
+  const [dbModalSuccess, setDbModalSuccess] = useState<string | null>(null);
+
+  const hasSupabase = isSupabaseConfigured();
+
+  const handleSaveSupabase = (e: React.FormEvent) => {
+    e.preventDefault();
+    setDbModalError(null);
+    setDbModalSuccess(null);
+    try {
+      const cleanUrl = supaUrl.trim();
+      const cleanKey = supaKey.trim();
+      if (!cleanUrl || !cleanKey) {
+        setDbModalError('សូមបញ្ចូល Supabase Project URL និង Anon Key ឱ្យបានត្រឹមត្រូវ (URL and Key are required)');
+        return;
+      }
+      configureSupabaseCredentials(cleanUrl, cleanKey);
+      setDbModalSuccess('បានរក្សាទុកការកំណត់ Supabase Cloud! កំពុងផ្ទុកទិន្នន័យឡើងវិញ...');
+      setTimeout(() => {
+        window.location.reload();
+      }, 700);
+    } catch (err: any) {
+      setDbModalError(err.message || 'Failed to configure Supabase');
+    }
+  };
+
+  const handleDisconnectSupabase = () => {
+    clearSupabaseCredentials();
+    setSupaUrl('');
+    setSupaKey('');
+    setDbModalSuccess('បានផ្តាច់ Supabase Cloud រួចរាល់');
+    setTimeout(() => {
+      window.location.reload();
+    }, 500);
+  };
 
   const switchMode = (newMode: 'signin' | 'signup' | 'forgot') => {
     setMode(newMode);
@@ -166,7 +213,13 @@ export const AuthView: React.FC = () => {
       } else if (mode === 'signin') {
         await login({ email: email.trim(), password });
       } else {
-        await register({ name: name.trim(), email: email.trim(), password });
+        const res = await register({ name: name.trim(), email: email.trim(), password });
+        if (res.requiresEmailConfirmation) {
+          setResetSuccessMessage(t.auth.emailConfirmationSent);
+          setPassword('');
+          setConfirmPassword('');
+          switchMode('signin');
+        }
       }
     } finally {
       setIsSubmitting(false);
@@ -195,6 +248,23 @@ export const AuthView: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Supabase Cloud Connect Status Button */}
+          <button
+            type="button"
+            onClick={() => setShowDbModal(true)}
+            className={`px-2.5 py-1 text-xs font-semibold rounded-xl border transition-all cursor-pointer inline-flex items-center gap-1.5 font-khmer ${
+              hasSupabase
+                ? 'bg-emerald-500/10 text-emerald-800 dark:text-emerald-300 border-emerald-500/30 hover:bg-emerald-500/20'
+                : 'bg-muted text-muted-foreground hover:text-foreground border-border'
+            }`}
+            title="Supabase Cloud PostgreSQL Settings"
+          >
+            <Database className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">
+              {hasSupabase ? t.auth.supabaseConfigured : t.auth.connectSupabase}
+            </span>
+          </button>
+
           {/* Language Switcher */}
           <div className="inline-flex items-center bg-muted p-1 rounded-xl border border-border">
             <button
@@ -525,6 +595,105 @@ export const AuthView: React.FC = () => {
       <footer className="relative z-10 py-4 text-center text-xs text-muted-foreground font-khmer">
         <p>© 2026 {t.appName} — Cloud Database Architecture with Supabase & PostgreSQL RLS</p>
       </footer>
+
+      {/* Supabase Cloud Connection Modal */}
+      {showDbModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fade-in">
+          <div className="w-full max-w-md bg-card border border-border rounded-3xl p-6 shadow-2xl space-y-4 animate-scale-up">
+            <div className="flex items-center justify-between pb-3 border-b border-border">
+              <div className="flex items-center gap-2">
+                <Database className="w-5 h-5 text-primary" />
+                <h3 className="text-base font-bold text-foreground font-khmer">
+                  {t.auth.connectSupabase}
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowDbModal(false)}
+                className="p-1 rounded-xl text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <p className="text-xs text-muted-foreground font-khmer leading-relaxed">
+              {t.auth.enterSupabaseCredentials}
+            </p>
+
+            {dbModalSuccess && (
+              <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-800 dark:text-emerald-300 text-xs font-khmer flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 shrink-0" />
+                <span>{dbModalSuccess}</span>
+              </div>
+            )}
+
+            {dbModalError && (
+              <div className="p-3 rounded-xl bg-destructive/10 border border-destructive/30 text-destructive text-xs font-khmer flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>{dbModalError}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleSaveSupabase} className="space-y-3">
+              <div>
+                <label className="block text-xs font-semibold text-foreground mb-1 font-khmer">
+                  Supabase Project URL
+                </label>
+                <input
+                  type="url"
+                  value={supaUrl}
+                  onChange={(e) => setSupaUrl(e.target.value)}
+                  placeholder="https://your-project.supabase.co"
+                  className="w-full px-3 py-2 text-xs rounded-xl bg-muted border border-border text-foreground placeholder:text-muted-foreground focus:outline-hidden focus:ring-2 focus:ring-primary/40"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-foreground mb-1 font-khmer">
+                  Supabase Anon Public Key
+                </label>
+                <textarea
+                  value={supaKey}
+                  onChange={(e) => setSupaKey(e.target.value)}
+                  placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                  rows={3}
+                  className="w-full px-3 py-2 text-xs rounded-xl bg-muted border border-border text-foreground placeholder:text-muted-foreground font-mono focus:outline-hidden focus:ring-2 focus:ring-primary/40 resize-none"
+                  required
+                />
+                <span className="text-[10px] text-muted-foreground">
+                  (Project Settings &gt; API &gt; Project API keys &gt; anon public)
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between pt-2 gap-2">
+                {hasSupabase ? (
+                  <button
+                    type="button"
+                    onClick={handleDisconnectSupabase}
+                    className="px-3 py-2 text-xs font-semibold text-destructive hover:bg-destructive/10 rounded-xl transition-colors cursor-pointer font-khmer"
+                  >
+                    ផ្តាច់ (Disconnect)
+                  </button>
+                ) : <div />}
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowDbModal(false)}
+                    className="px-3 py-2 text-xs font-semibold text-muted-foreground hover:text-foreground hover:bg-muted rounded-xl transition-colors cursor-pointer font-khmer"
+                  >
+                    បិទ (Close)
+                  </button>
+                  <Button type="submit" size="sm" className="font-khmer text-xs">
+                    {t.auth.saveSupabase}
+                  </Button>
+                </div>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

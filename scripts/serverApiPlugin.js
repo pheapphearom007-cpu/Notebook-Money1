@@ -122,15 +122,23 @@ function writeDb(data) {
   }
 }
 
-function hashPassword(password, salt) {
-  return crypto.pbkdf2Sync(password, salt, 1000, 64, 'sha256').toString('hex');
+function hashPassword(password, salt, iterations = 100000) {
+  return crypto.pbkdf2Sync(password, salt, iterations, 64, 'sha256').toString('hex');
 }
 
 function verifyPassword(password, salt, storedHash) {
   if (!password || !salt || !storedHash) return false;
-  const hash = hashPassword(password, salt);
-  if (hash.length !== storedHash.length) return false;
-  return crypto.timingSafeEqual(Buffer.from(hash, 'hex'), Buffer.from(storedHash, 'hex'));
+  // Try 100,000 iterations first (new standard)
+  const hash100k = hashPassword(password, salt, 100000);
+  if (hash100k.length === storedHash.length && crypto.timingSafeEqual(Buffer.from(hash100k, 'hex'), Buffer.from(storedHash, 'hex'))) {
+    return true;
+  }
+  // Fallback to legacy 1,000 iterations for existing users
+  const hashLegacy = hashPassword(password, salt, 1000);
+  if (hashLegacy.length === storedHash.length && crypto.timingSafeEqual(Buffer.from(hashLegacy, 'hex'), Buffer.from(storedHash, 'hex'))) {
+    return true;
+  }
+  return false;
 }
 
 let mailTransporter = null;
@@ -222,10 +230,20 @@ async function sendResetEmail(email, resetLink) {
   }
 }
 
+const MAX_BODY_SIZE = 1024 * 1024; // 1MB payload limit
+const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30-day session lifetime
+
 function parseJsonBody(req) {
   return new Promise((resolve) => {
     let body = '';
+    let size = 0;
     req.on('data', (chunk) => {
+      size += chunk.length;
+      if (size > MAX_BODY_SIZE) {
+        req.destroy();
+        resolve({ __bodyTooLarge: true });
+        return;
+      }
       body += chunk.toString();
     });
     req.on('end', () => {
@@ -235,12 +253,17 @@ function parseJsonBody(req) {
         resolve({});
       }
     });
+    req.on('error', () => {
+      resolve({});
+    });
   });
 }
 
 function sendJson(res, statusCode, data) {
   res.statusCode = statusCode;
   res.setHeader('Content-Type', 'application/json');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
@@ -254,6 +277,14 @@ function authenticateUser(req, db) {
 
   const session = (db.sessions || []).find((s) => s.token === token);
   if (!session) return null;
+
+  // Session TTL Expiration check
+  if (session.createdAt) {
+    const sessionAge = Date.now() - new Date(session.createdAt).getTime();
+    if (sessionAge > SESSION_TTL_MS) {
+      return null;
+    }
+  }
 
   return (db.users || []).find((u) => u.id === session.userId) || null;
 }
@@ -286,10 +317,17 @@ export async function handleCloudApi(req, res) {
         // 1. POST /api/auth/register
         if (pathname === '/api/auth/register' && req.method === 'POST') {
           const body = await parseJsonBody(req);
+          if (body.__bodyTooLarge) {
+            return sendJson(res, 413, { error: 'Payload too large. Maximum size is 1MB.' });
+          }
           const { name, email, password } = body;
 
           if (!name?.trim() || !email?.trim() || !password) {
             return sendJson(res, 400, { error: 'Please provide name, email, and password.' });
+          }
+
+          if (password.length < 6) {
+            return sendJson(res, 400, { error: 'Password must be at least 6 characters.' });
           }
 
           const normalizedEmail = email.trim().toLowerCase();
